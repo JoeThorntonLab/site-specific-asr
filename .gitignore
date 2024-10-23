@@ -3,4 +3,5 @@
 .RData
 .Ruserdata
 .local/
-.tmp/
+tmp/
+local/
