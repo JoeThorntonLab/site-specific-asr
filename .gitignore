@@ -2,6 +2,11 @@
 .Rhistory
 .RData
 .Ruserdata
+<<<<<<< HEAD
 .local/
 tmp/
 local/
+=======
+local/
+tmp/
+>>>>>>> e1f401249b26150f2a3a24dbc73217177f833810
