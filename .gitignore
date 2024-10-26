@@ -5,4 +5,4 @@
 tmp/
 local/
 *.sbatch
-ASR/
+*_PP.txt
