@@ -2,6 +2,15 @@
 .Rhistory
 .RData
 .Ruserdata
+<<<<<<< HEAD
+.local/
+tmp/
+local/
+=======
 local/
 tmp/
+<<<<<<< HEAD
 .sbatch
+=======
+>>>>>>> e1f401249b26150f2a3a24dbc73217177f833810
+>>>>>>> 340ba0fc5ca4c0051a011cea4d2fe6010e7fc889
