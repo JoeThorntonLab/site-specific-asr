@@ -1,10 +1,10 @@
 ---
 title: "Empirical data analysis"
 author: "Ricardo Muñiz Trejo"
-date: "2022-10-17"
+date: "`r Sys.Date()`"
 output: html_document
 editor_options: 
-  chunk_output_type: console
+  chunk_output_type: inline
 ---
 
 ```{r setup, include=FALSE}
@@ -24,24 +24,14 @@ rm(requiredPackages)
 
 #Set theme for all plots
 theme_set(theme_classic())
-theme_update(axis.text = element_text(size = 12),
-             legend.text = element_text(size = 12),
-             legend.title = element_text(size = 12),
-             axis.title = element_text(size = 12),
-             text = element_text(size = 13, family ="sans"),
-             panel.grid = element_blank(),
+theme_update(panel.grid = element_blank(),
              panel.background = element_blank(),
              aspect.ratio = 1)
 
-# Set paths to results and figures
-empirical.path <- file.path(here(), "results/empirical")
+# Set working directory to empirical directory
+data.path <- file.path(paste0(here(), "/empirical/data/"))
+results.path <- file.path(paste0(here(), "/empirical/results/"))
 
-sr.path <- file.path(empirical.path, "steroid_receptors/SR/")
-rbd.path <- file.path(empirical.path, "sars_rbd/")
-ha.path <- file.path(empirical.path, "hemagglutinin/")
-
-figure.path <- file.path(here(), "figures/empirical_data/")
-epistasis.figure.path <- file.path(here(), "figures/epistasis/")
 
 # Basic parameters of each system
 sr.alignment.size <- 76
@@ -62,7 +52,10 @@ ha.model.list <- c("H1", "H3", "FLU", "Poisson")
 
 ## Among-site compositional heterogeneity
 
-```{r load parsimony gap data}
+```{r load parsimony gap data, include=FALSE}
+
+
+
 
 read_gap_data <- function(node_directory, gap_file_path){
 
@@ -88,14 +81,14 @@ read_gap_data <- function(node_directory, gap_file_path){
   return(gap_vector) # Return the gap vector
 }
 
-SR_node_order <- file.path("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/steroid_receptors/SR/JTT/ASR")
-SR_gap_file <- file.path("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/SR_parsimony_gaps.csv")
+SR_node_order <- file.path(paste0(results.path, "/sr.ss.er/ASR"))
+SR_gap_file <- file.path(paste0(data.path, "/sr_parsimony_gaps.csv"))
 
-HA_node_order <- file.path("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/hemagglutinin/FLU/ASR")
-HA_gap_file <- file.path("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/HA_parsimony_gaps.csv")
+HA_node_order <- file.path(paste0(results.path, "/ha.ss.h1/ASR"))
+HA_gap_file <- file.path(paste0(data.path, "/ha_parsimony_gaps.csv"))
 
-RBD_node_order <- file.path("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/sars_rbd/WAG/ASR")
-RBD_gap_file <- file.path("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/RBD_parsimony_gaps.csv")
+RBD_node_order <- file.path(paste0(results.path, "/rbd.ss.sars/ASR"))
+RBD_gap_file <- file.path(paste0(data.path, "/rbd_parsimony_gaps.csv"))
 
 
 SR_gaps <- read_gap_data(SR_node_order, SR_gap_file)
@@ -104,7 +97,7 @@ RBD_gaps <- read_gap_data(RBD_node_order, RBD_gap_file)
 
 ```
 
-
+## Reconstruction comparison among models
 
 ```{r ML set comparison}
 
@@ -211,7 +204,7 @@ summarise_disagreements <- function(compared_models_table, alignment_size) {
   return(summary_disagreements)
 }
 
-sr.model.list <- c("C_teleta_SR", "HsMR", "JTT", "Poisson") 
+sr.model.list <- c("SS-ER", "SS-MR", "JTT", "Poisson") 
 ha.model.list <- c("H1", "H3", "FLU", "Poisson") 
 rbd.model.list <- c("SARS_CoV_2", "WAG", "Poisson") 
 
@@ -219,9 +212,89 @@ rbd.model.list <- c("SARS_CoV_2", "WAG", "Poisson")
 ## SR DBD with only 3 DMS datasets
 
 # Generate all pairwise combinations and self-comparison of models
-model_pairs <- combn(sr.model.list, 2)
-self_comparisons <- t(matrix(sr.model.list, nrow = length(sr.model.list), ncol = 2))
-model_pairs <- cbind(model_pairs, self_comparisons)
+model_pairs <- combn(sr.results, 2)
+self_comparisons <- t(matrix(sr.results, nrow = length(sr.results), ncol = 2))
+#model_pairs <- cbind(model_pairs, self_comparisons)
+
+
+
+
+sr.results <- list.files(path = results.path, pattern = "sr",
+                         recursive = FALSE, full.names = FALSE, include.dirs = TRUE)
+
+rbd.results <- list.files(path = results.path, pattern = "rbd",
+                         recursive = FALSE, full.names = FALSE, include.dirs = TRUE)
+
+ha.results <- list.files(path = results.path, pattern = "ha",
+                         recursive = FALSE, full.names = FALSE, include.dirs = TRUE)
+
+
+node_file_list <- list.files(path = file.path(results.path, sr.results[1], "ASR"), pattern = "[0-9]{1,3}\\.txt")
+
+
+# Create a site vector from 1 to the alignment size
+  site <- 1:alignment_size
+  
+  # Get list of node files for reconstruction
+  node_file_list <- list.files(path = file.path(model_path, model_1, "ASR"), pattern = "[0-9]{1,3}\\.txt")
+  
+  # Pre-allocate output data table with columns for node, site, model 1, model 2,
+  # mismatch, and true_mismatch
+  PP_tibble <- data.table(node = integer(), 
+                           site = integer(), 
+                           model_1 = character(),
+                           model_2 = character(),
+                           mismatch = character(),
+                           stringsAsFactors = FALSE)
+  
+  # Loop over nodes to reconstruct sequences and compare
+  for (i in seq_along(node_file_list)) {
+    
+    # Get node number from filename
+    node_number <- rep(parse_number(node_file_list[i]), 
+                       times = alignment_size)  
+    
+    # Load sequences for both models
+    model_1_sequence <- readLines(file.path(model_path, model_1, "ASR", node_file_list[[i]]))
+    model_2_sequence <- readLines(file.path(model_path, model_2, "ASR", node_file_list[[i]]))
+    
+    # Compare sequences and record results
+    mismatch_ml <- +(charToRaw(model_1_sequence) != charToRaw(model_2_sequence))
+    mismatch_ml <- ifelse(mismatch_ml == 0, "identical", "disagreement")
+    
+    # Bind the node, site, model 1, model 2, and mismatch columns to the output data table
+    PP_tibble <- rbind(PP_tibble, data.table(node = node_number,
+                                         site = site, 
+                                         model_1 = strsplit(model_1_sequence, split = "")[[1]],
+                                         model_2 = strsplit(model_2_sequence, split = "")[[1]],
+                                         mismatch = mismatch_ml))
+  }
+  
+  # Add the gaps vector as a column to the output data table
+  gaps <- gap_vector
+  PP_tibble <- cbind(PP_tibble, gaps)
+  
+  # Set the "true_mismatch" column to "identical" where gaps are detected,
+  # otherwise it reflects the comparison result from the "mismatch" column
+  PP_tibble[, true_mismatch := ifelse(gaps == "gap", "identical", mismatch)]
+  
+  # Modify column names
+  setnames(PP_tibble, c("node", "site", "model_1", "model_2", "mismatch", "gaps", "true_mismatch"), 
+           c("node", "site", model_1, model_2, "mismatch", "gap", "true_mismatch"))
+  
+  # Convert true_mismatch to a factor with levels "identical" and "disagreement"
+  PP_tibble$true_mismatch <- factor(PP_tibble$true_mismatch, levels = c("identical", "disagreement"))
+  
+  # Return the output data table
+  return(PP_tibble)
+
+
+
+
+
+
+
+
 
 # Loop over each pairwise combination and compare models
 SR_model_comparison_list <- lapply(seq_len(ncol(model_pairs)), function(i) {
