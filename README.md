@@ -1,6 +1,7 @@
 # site-specific-asr
 
 This repository contains the scripts, data, and results found in the paper:
+
 Muñiz Trejo, R, Y. Park & J. W. Thornton (2024). Robustness of ancestral sequence 
 reconstruction to among-site model heterogeneity and epistasis
 
