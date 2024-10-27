@@ -52,50 +52,54 @@ ha.model.list <- c("H1", "H3", "FLU", "Poisson")
 
 ## Among-site compositional heterogeneity
 
-```{r load parsimony gap data, include=FALSE}
+```{r load parsimony gap data, include=FALSE, warning=FALSE}
 
+# For the analysis of empirical data, we wanted to identify sites throughout the
+# tree that would be reconstructed as gaps given that there are some historical
+# indels in the alignments. Typically, maximum likelihood ASR does not identify 
+# these sites as gaps. Instead, it assigns states based on the empirical frequencies, 
+# causing an artifact in which model selection appears to be important. 
+# artifact of the reconstruction algorithms. We performed parsimony based ASR to 
+# identify sites that should be reconstructed as gaps using Mesquite 3.70 (Maddison 
+# and Maddison 2021). We recoded the alignments to contain two states, G for sites
+# with gaps, and A for sites with an amino acid states. As such, sites that should
+# be reconstructed as gaps appear as Gs in the reconstructions along the tree.
 
-
-
-read_gap_data <- function(node_directory, gap_file_path){
-
-  # Extract node numbers from file names in node_directory
-  node_file_list <- list.files(path = node_directory, pattern = "[0-9]{1,3}.txt")
-  nodes <- gsub(".*?([0-9]+).*", "\\1",node_file_list)
-  nodes <- c("site", nodes) # Add "site" as the first node
+clean_gap_data <- function(path){
   
-  # Load parsimony table and rename columns to match node numbers
-  parsimony <- read.csv(gap_file_path)
-  node_order <- colnames(parsimony)[-1] # Get the node order from the column names
-  renamed_col <- c("site", gsub(".*?([0-9]+).*", "\\1",node_order)) # Rename the columns to match node numbers
-  colnames(parsimony) <- renamed_col
+  # Read data from gaps in reconstructions
+  parsimony <- setDT(read.csv(path, header = TRUE))
   
-  # Reorder columns according to node numbers and convert data from wide to long format
-  parsimony <- parsimony[,nodes] # Reorder columns according to node numbers
-  parsimony <- parsimony %>%
-    gather("node", "state",2:(length(node_file_list)+1)) %>%
-    mutate(gap = ifelse(state == "G", "gap", "no_gap")) # Convert data from wide to long format and create a gap vector
+  # Change table to long format by transforming all nodes into a single column
+  parsimony <- melt(parsimony, id.vars = "site", 
+                    measured.vars = 2:ncol(parsimony), 
+                    variable.name = "node")
   
-  gap_vector <- parsimony$gap # Extract the gap vector from the data
+  # Reading the data adds a "X" to node names, change to actual node numbers
+  parsimony[, node := as.numeric(gsub("[^0-9]", "", node))]
   
-  return(gap_vector) # Return the gap vector
+  # Reformat variable to be more explicit about the presence/absence of a gap
+  # in the reconstruction process and simplify
+  parsimony[, gap := ifelse(value == "G", "gap", "no_gap")]
+  parsimony <- parsimony[, c("site", "node", "gap")]
+  
+  return(parsimony)
+
 }
 
-SR_node_order <- file.path(paste0(results.path, "/sr.ss.er/ASR"))
 SR_gap_file <- file.path(paste0(data.path, "/sr_parsimony_gaps.csv"))
-
-HA_node_order <- file.path(paste0(results.path, "/ha.ss.h1/ASR"))
 HA_gap_file <- file.path(paste0(data.path, "/ha_parsimony_gaps.csv"))
-
-RBD_node_order <- file.path(paste0(results.path, "/rbd.ss.sars/ASR"))
 RBD_gap_file <- file.path(paste0(data.path, "/rbd_parsimony_gaps.csv"))
 
+SR_gaps <- clean_gap_data(SR_gap_file)
+HA_gaps <- clean_gap_data(HA_gap_file)
+RBD_gaps <- clean_gap_data(RBD_gap_file)
 
-SR_gaps <- read_gap_data(SR_node_order, SR_gap_file)
-HA_gaps <- read_gap_data(HA_node_order, HA_gap_file)
-RBD_gaps <- read_gap_data(RBD_node_order, RBD_gap_file)
 
 ```
+
+
+
 
 ## Reconstruction comparison among models
 
@@ -229,14 +233,18 @@ ha.results <- list.files(path = results.path, pattern = "ha",
                          recursive = FALSE, full.names = FALSE, include.dirs = TRUE)
 
 
-node_file_list <- list.files(path = file.path(results.path, sr.results[1], "ASR"), pattern = "[0-9]{1,3}\\.txt")
+
+
+
+
 
 
 # Create a site vector from 1 to the alignment size
-  site <- 1:alignment_size
+  site <- 1:76
   
   # Get list of node files for reconstruction
-  node_file_list <- list.files(path = file.path(model_path, model_1, "ASR"), pattern = "[0-9]{1,3}\\.txt")
+  node_file_list <- list.files(path = file.path(results.path, sr.results[1], "ASR"), pattern = "[0-9]{1,3}\\.txt")
+
   
   # Pre-allocate output data table with columns for node, site, model 1, model 2,
   # mismatch, and true_mismatch
@@ -252,11 +260,11 @@ node_file_list <- list.files(path = file.path(results.path, sr.results[1], "ASR"
     
     # Get node number from filename
     node_number <- rep(parse_number(node_file_list[i]), 
-                       times = alignment_size)  
+                       times = 76)  
     
     # Load sequences for both models
-    model_1_sequence <- readLines(file.path(model_path, model_1, "ASR", node_file_list[[i]]))
-    model_2_sequence <- readLines(file.path(model_path, model_2, "ASR", node_file_list[[i]]))
+    model_1_sequence <- readLines(file.path(results.path, "sr.sh.jtt", "ASR", node_file_list[[i]]))
+    model_2_sequence <- readLines(file.path(results.path, "sr.sh.poisson", "ASR", node_file_list[[i]]))
     
     # Compare sequences and record results
     mismatch_ml <- +(charToRaw(model_1_sequence) != charToRaw(model_2_sequence))
@@ -269,7 +277,10 @@ node_file_list <- list.files(path = file.path(results.path, sr.results[1], "ASR"
                                          model_2 = strsplit(model_2_sequence, split = "")[[1]],
                                          mismatch = mismatch_ml))
   }
+
+  merge(PP_tibble, HA_gaps, by = c("node", "site"))
   
+    
   # Add the gaps vector as a column to the output data table
   gaps <- gap_vector
   PP_tibble <- cbind(PP_tibble, gaps)

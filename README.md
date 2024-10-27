@@ -22,3 +22,13 @@ those files are also located there. Additionally, ten examples of simulations us
 the models parameters of SR at 0.8 substitutions/site are provided. The script for 
 the analysis of these data is included.
 
+simulate_alignment.R
+
+Rscript <path to script>/simulate_alignment.R 
+<path to data>/**_infered_parameters.txt
+<path to data>/dms_dataset.csv
+<path to data>/tree.txt
+<insert branch length value>
+
+`Rscript /site-specific-asr/simulate_alignment.R /site-specific-asr/simulations/data/rbd_inferred_parameters.txt /site-specific-asr/simulations/data/rbd_dms_sars.csv /site-specific-asr/simulations/data/tree.txt 0.4`
+
