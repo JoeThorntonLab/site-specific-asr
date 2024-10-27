@@ -5,8 +5,3 @@
 tmp/
 local/
 *.sbatch
-sr.ss.er/
-sr.ss.mr/
-sr.sh.jtt/
-sr.sh.poisson/
-
