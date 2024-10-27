@@ -5,8 +5,12 @@
 tmp/
 local/
 *.sbatch
-ha.sh.poisson/ASR/*_PP.txt
-ha.ss.h1/ASR/*_PP.txt
-ha.ss.h3/ASR/*_PP.txt
-
+sr.ss.er/
+sr.ss.mr/
+sr.sh.jtt/
+sr.sh.poisson/
+rbd.ss.sars/
+rbd.sh.wag/
+rbd.sh.poisson/
+ha.ss.h1/
 
