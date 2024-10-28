@@ -6,3 +6,11 @@
 tmp/
 local/
 *.sbatch
+DMSPhyloAA_RBD/
+paml_best/
+paml_poisson/
+snapshot/
+codeml.ctl
+rates
+sim_alignment_paml.phy
+best_ml_tree.txt
