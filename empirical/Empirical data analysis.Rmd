@@ -116,17 +116,17 @@ RBD_gaps <- clean_gap_data(RBD_gap_file)
 # the results in a data table.
 # If a gap is detected at a given site, the "true_mismatch" column is set to "identical".
 # Otherwise, the "true_mismatch" column reflects the comparison result from "mismatch" column.
-compare_ml_states <- function(model_1, model_2, alignment_size, model_path, gap_vector) {
+compare_ml_states <- function(model_1, model_2, alignment_size, gaps) {
   
   # Create a site vector from 1 to the alignment size
   site <- 1:alignment_size
   
   # Get list of node files for reconstruction
-  node_file_list <- list.files(path = file.path(model_path, model_1, "ASR"), pattern = "[0-9]{1,3}\\.txt")
+  node_file_list <- list.files(path = file.path(results.path, model_1, "ASR"), pattern = "[0-9]{1,3}\\.txt")
   
   # Pre-allocate output data table with columns for node, site, model 1, model 2,
   # mismatch, and true_mismatch
-  PP_tibble <- data.table(node = integer(), 
+  site_comparison <- data.table(node = integer(), 
                            site = integer(), 
                            model_1 = character(),
                            model_2 = character(),
@@ -141,15 +141,15 @@ compare_ml_states <- function(model_1, model_2, alignment_size, model_path, gap_
                        times = alignment_size)  
     
     # Load sequences for both models
-    model_1_sequence <- readLines(file.path(model_path, model_1, "ASR", node_file_list[[i]]))
-    model_2_sequence <- readLines(file.path(model_path, model_2, "ASR", node_file_list[[i]]))
+    model_1_sequence <- readLines(file.path(results.path, model_1, "ASR", node_file_list[[i]]))
+    model_2_sequence <- readLines(file.path(results.path, model_2, "ASR", node_file_list[[i]]))
     
     # Compare sequences and record results
     mismatch_ml <- +(charToRaw(model_1_sequence) != charToRaw(model_2_sequence))
     mismatch_ml <- ifelse(mismatch_ml == 0, "identical", "disagreement")
     
     # Bind the node, site, model 1, model 2, and mismatch columns to the output data table
-    PP_tibble <- rbind(PP_tibble, data.table(node = node_number,
+    site_comparison <- rbind(site_comparison, data.table(node = node_number,
                                          site = site, 
                                          model_1 = strsplit(model_1_sequence, split = "")[[1]],
                                          model_2 = strsplit(model_2_sequence, split = "")[[1]],
@@ -157,23 +157,30 @@ compare_ml_states <- function(model_1, model_2, alignment_size, model_path, gap_
   }
   
   # Add the gaps vector as a column to the output data table
-  gaps <- gap_vector
-  PP_tibble <- cbind(PP_tibble, gaps)
+  site_comparison <- merge(site_comparison, gaps, by = c("node", "site"))
   
   # Set the "true_mismatch" column to "identical" where gaps are detected,
   # otherwise it reflects the comparison result from the "mismatch" column
-  PP_tibble[, true_mismatch := ifelse(gaps == "gap", "identical", mismatch)]
+  site_comparison[, true_mismatch := ifelse(gap == "gap", "identical", mismatch)]
   
-  # Modify column names
-  setnames(PP_tibble, c("node", "site", "model_1", "model_2", "mismatch", "gaps", "true_mismatch"), 
+  
+  # Extract model name
+  model_1 <- sub(".*_", "", model_1) 
+  model_2 <- sub(".*_", "", model_2)
+  
+  # Set column names
+  setnames(site_comparison, c("node", "site", "model_1", "model_2", "mismatch", "gap", "true_mismatch"), 
            c("node", "site", model_1, model_2, "mismatch", "gap", "true_mismatch"))
   
   # Convert true_mismatch to a factor with levels "identical" and "disagreement"
-  PP_tibble$true_mismatch <- factor(PP_tibble$true_mismatch, levels = c("identical", "disagreement"))
+  site_comparison$true_mismatch <- factor(site_comparison$true_mismatch, levels = c("identical", "disagreement"))
   
   # Return the output data table
-  return(PP_tibble)
+  return(site_comparison)
 }
+
+
+
 
 # A function to summarize the number and percentage of disagreements in a comparison table
 # Takes a data table as input
@@ -185,6 +192,11 @@ summarise_model_comparison <- function(compare_table){
   # Return the summary table
   return(summary_table)
 }
+
+
+
+
+
 
 summarise_disagreements <- function(compared_models_table, alignment_size) {
   # For number and proportion of identical and disagreeing states
@@ -213,6 +225,9 @@ summarise_disagreements <- function(compared_models_table, alignment_size) {
   return(summary_disagreements)
 }
 
+
+
+
 sr.model.list <- c("SS-ER", "SS-MR", "JTT", "Poisson") 
 ha.model.list <- c("H1", "H3", "FLU", "Poisson") 
 rbd.model.list <- c("SARS_CoV_2", "WAG", "Poisson") 
@@ -237,87 +252,73 @@ rbd.results <- list.files(path = results.path, pattern = "rbd",
 ha.results <- list.files(path = results.path, pattern = "ha",
                          recursive = FALSE, full.names = FALSE, include.dirs = TRUE)
 
-
-model_pairs <- combn(sr.results, 2)
-self_comparisons <- t(matrix(sr.results, nrow = length(sr.results), ncol = 2))
-
-
-
-
-
-
-# Create a site vector from 1 to the alignment size
-  site <- 1:76
-  
-  # Get list of node files for reconstruction
-  node_file_list <- list.files(path = file.path(results.path, sr.results[1], "ASR"), pattern = "[0-9]{1,3}\\.txt")
-
-  
-  # Pre-allocate output data table with columns for node, site, model 1, model 2,
-  # mismatch, and true_mismatch
-  PP_tibble <- data.table(node = integer(), 
-                           site = integer(), 
-                           model_1 = character(),
-                           model_2 = character(),
-                           mismatch = character(),
-                           stringsAsFactors = FALSE)
-  
-  # Loop over nodes to reconstruct sequences and compare
-  for (i in seq_along(node_file_list)) {
-    
-    # Get node number from filename
-    node_number <- rep(parse_number(node_file_list[i]), 
-                       times = 76)  
-    
-    # Load sequences for both models
-    model_1_sequence <- readLines(file.path(results.path, "sr.sh.jtt", "ASR", node_file_list[[i]]))
-    model_2_sequence <- readLines(file.path(results.path, "sr.sh.poisson", "ASR", node_file_list[[i]]))
-    
-    # Compare sequences and record results
-    mismatch_ml <- +(charToRaw(model_1_sequence) != charToRaw(model_2_sequence))
-    mismatch_ml <- ifelse(mismatch_ml == 0, "identical", "disagreement")
-    
-    # Bind the node, site, model 1, model 2, and mismatch columns to the output data table
-    PP_tibble <- rbind(PP_tibble, data.table(node = node_number,
-                                         site = site, 
-                                         model_1 = strsplit(model_1_sequence, split = "")[[1]],
-                                         model_2 = strsplit(model_2_sequence, split = "")[[1]],
-                                         mismatch = mismatch_ml))
-  }
-
-  merge(PP_tibble, HA_gaps, by = c("node", "site"))
-  
-    
-  # Add the gaps vector as a column to the output data table
-  gaps <- gap_vector
-  PP_tibble <- cbind(PP_tibble, gaps)
-  
-  # Set the "true_mismatch" column to "identical" where gaps are detected,
-  # otherwise it reflects the comparison result from the "mismatch" column
-  PP_tibble[, true_mismatch := ifelse(gaps == "gap", "identical", mismatch)]
-  
-  # Modify column names
-  setnames(PP_tibble, c("node", "site", "model_1", "model_2", "mismatch", "gaps", "true_mismatch"), 
-           c("node", "site", model_1, model_2, "mismatch", "gap", "true_mismatch"))
-  
-  # Convert true_mismatch to a factor with levels "identical" and "disagreement"
-  PP_tibble$true_mismatch <- factor(PP_tibble$true_mismatch, levels = c("identical", "disagreement"))
-  
-  # Return the output data table
-  return(PP_tibble)
-
-
-
-
-
-
-
-
-
 # Loop over each pairwise combination and compare models
 SR_model_comparison_list <- lapply(seq_len(ncol(model_pairs)), function(i) {
-  compare_ml_states(model_pairs[1, i], model_pairs[2, i], sr.alignment.size, sr.path, SR_gaps)
+  compare_ml_states(model_pairs[1, i], model_pairs[2, i], sr.alignment.size, SR_gaps)
 })
+
+
+function(dt_list){
+
+  model_comparison <- data.table(true_mismatch = character(), 
+                           count = integer(), 
+                           percentage = numeric(),
+                           model_a = character(),
+                           model_b = character(),
+                           stringsAsFactors = FALSE)
+  
+  for(i in 1:length(SR_model_comparison_list)){
+  
+  site_comparison <- SR_model_comparison_list[[i]]
+  site_comparison <- site_comparison[, .(count = .N), by = true_mismatch][,
+    # Calculate the percentage of occurrences for each true_mismatch value 
+    percentage := count/nrow(site_comparison)*100][]
+  
+  model_a <- sub(".*_", "", model_pairs[1, i]) 
+  model_b <- sub(".*_", "", model_pairs[2, i])
+  
+  site_comparison[, model_a := model_a]
+  site_comparison[, model_b := model_b]
+  
+  model_comparison <- rbind(model_comparison, site_comparison)
+  }
+  
+  self_comparisons
+  
+  
+}
+
+
+ggplot(model_comparison[true_mismatch == "identical"], aes(x = model_a, y = model_b)) +
+  geom_tile(color = "black", fill = "white") +
+  geom_text(aes(label = round(percentage, digits = 1)), size = 8) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        aspect.ratio = 1) +
+  labs(x = "ML states",
+       y = "ML states",
+       fill = "Identity (%)")
+
+
+
+
+plot.main.comparison <- function(table, color_choice){
+  plot <- ggplot(table, aes(x = model_1, y = model_2)) +
+  geom_tile(color = "black", fill = color_choice) +
+  geom_text(aes(label = round(identical_states_percent, digits = 1)), size = 8) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        aspect.ratio = 1) +
+  labs(x = "ML states",
+       y = "ML states",
+       fill = "Identity (%)")
+  return(plot)
+}
+
+
+
+
+
+
+
 
 # Summarise identical and disagreeing states into a data frame
 SR_model_disagreements_table <- data.frame()
