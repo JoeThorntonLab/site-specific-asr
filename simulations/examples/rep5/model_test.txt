@@ -1,0 +1,278 @@
+
+----------------------------------------------------------------------------------------------
+ProtTest 3.4.2                      Fast selection of the best-fit models of protein evolution
+(c) 2009-2016   Diego Darriba (1,2), Guillermo Taboada (2), Ram?n Doallo (2), David Posada (1)
+(1)                               Facultad de Biologia, Universidad de Vigo, 36200 Vigo, Spain
+(2)                    Facultade de Inform?tica, Universidade da Coru?a, 15071 A Coru?a, Spain
+----------------------------------------------------------------------------------------------
+Manual:                                    http://darwin.uvigo.es/download/prottest_manual.pdf
+Homepage:                                                 http://github.com/ddarriba/prottest3
+Discussion group:                                     https://groups.google.com/group/prottest
+Contact:                                                  ddarriba@h-its.org, dposada@uvigo.es
+----------------------------------------------------------------------------------------------
+
+Version:  3.4.2 : 8th May 2016
+Date:     Sun Oct 27 14:35:36 CDT 2024
+OS:       Linux (3.10.0-1160.76.1.el7.x86_64)
+Arch:     amd64
+Java:     15.0.2 (Oracle Corporation)
+PhyML:    /project2/joet1/Ricardo/Programs/prottest-3.4.2/bin/PhyML_3.0_linux64
+
+Citation: Darriba D, Taboada GL, Doallo R, Posada D. ProtTest 3: fast selection of best-fit 
+          models of protein evolution. Bioinformatics, 27:1164-1165, 2011
+
+
+ProtTest options
+----------------
+  Alignment file........... : sim_alignment.phy
+  Tree..................... : /project2/joet1/Ricardo/empirical_asr/data/simulations/tree.txt
+  StrategyMode............. : User defined topology
+  Candidate models......... : 
+    Matrices............... : JTT LG DCMut MtREV MtMam MtArt Dayhoff WAG RtREV CpREV Blosum62 VT HIVb HIVw FLU 
+    Distributions.......... : Uniform +G 
+    Observed frequencies... : false
+
+  Statistical framework
+    Sort models according to....: 
+       AICc 
+    Sample size.................: 182.0
+  Other options:
+    Display best tree in ASCII..: false
+    Display best tree in Newick.: false
+    Display consensus tree......: false
+    Verbose.....................: false
+
+**********************************************************
+Observed number of invariant sites: 103
+Observed aminoacid frequencies:
+ A: 0.045    C: 0.030    D: 0.043    E: 0.025    F: 0.051   
+ G: 0.041    H: 0.038    I: 0.056    K: 0.047    L: 0.069   
+ M: 0.012    N: 0.058    P: 0.051    Q: 0.044    R: 0.104   
+ S: 0.099    T: 0.045    V: 0.065    W: 0.010    Y: 0.067   
+
+**********************************************************
+
+Model................................ : JTT
+  Number of parameters............... : 5 (0 + 5 branch length estimates)
+ -lnL................................ = 1238.18
+     (seconds))
+
+Model................................ : JTT+G
+  Number of parameters............... : 6 (1 + 5 branch length estimates)
+    gamma shape (4 rate categories).. = 0.393
+ -lnL................................ = 1210.95
+     (seconds))
+
+Model................................ : LG
+  Number of parameters............... : 5 (0 + 5 branch length estimates)
+ -lnL................................ = 1257.74
+     (seconds))
+
+Model................................ : LG+G
+  Number of parameters............... : 6 (1 + 5 branch length estimates)
+    gamma shape (4 rate categories).. = 0.364
+ -lnL................................ = 1227.59
+     (seconds))
+
+Model................................ : DCMut
+  Number of parameters............... : 5 (0 + 5 branch length estimates)
+ -lnL................................ = 1266.45
+     (seconds))
+
+Model................................ : DCMut+G
+  Number of parameters............... : 6 (1 + 5 branch length estimates)
+    gamma shape (4 rate categories).. = 0.345
+ -lnL................................ = 1232.63
+     (seconds))
+
+Model................................ : MtREV
+  Number of parameters............... : 5 (0 + 5 branch length estimates)
+ -lnL................................ = 1313.45
+     (seconds))
+
+Model................................ : MtREV+G
+  Number of parameters............... : 6 (1 + 5 branch length estimates)
+    gamma shape (4 rate categories).. = 0.314
+ -lnL................................ = 1268.88
+     (seconds))
+
+Model................................ : MtMam
+  Number of parameters............... : 5 (0 + 5 branch length estimates)
+ -lnL................................ = 1346.78
+     (seconds))
+
+Model................................ : MtMam+G
+  Number of parameters............... : 6 (1 + 5 branch length estimates)
+    gamma shape (4 rate categories).. = 0.261
+ -lnL................................ = 1275.14
+     (seconds))
+
+Model................................ : MtArt
+  Number of parameters............... : 5 (0 + 5 branch length estimates)
+ -lnL................................ = 1371.11
+     (seconds))
+
+Model................................ : MtArt+G
+  Number of parameters............... : 6 (1 + 5 branch length estimates)
+    gamma shape (4 rate categories).. = 0.222
+ -lnL................................ = 1293.79
+     (seconds))
+
+Model................................ : Dayhoff
+  Number of parameters............... : 5 (0 + 5 branch length estimates)
+ -lnL................................ = 1266.65
+     (seconds))
+
+Model................................ : Dayhoff+G
+  Number of parameters............... : 6 (1 + 5 branch length estimates)
+    gamma shape (4 rate categories).. = 0.344
+ -lnL................................ = 1232.65
+     (seconds))
+
+Model................................ : WAG
+  Number of parameters............... : 5 (0 + 5 branch length estimates)
+ -lnL................................ = 1243.70
+     (seconds))
+
+Model................................ : WAG+G
+  Number of parameters............... : 6 (1 + 5 branch length estimates)
+    gamma shape (4 rate categories).. = 0.427
+ -lnL................................ = 1220.64
+     (seconds))
+
+Model................................ : RtREV
+  Number of parameters............... : 5 (0 + 5 branch length estimates)
+ -lnL................................ = 1271.26
+     (seconds))
+
+Model................................ : RtREV+G
+  Number of parameters............... : 6 (1 + 5 branch length estimates)
+    gamma shape (4 rate categories).. = 0.38
+ -lnL................................ = 1242.85
+     (seconds))
+
+Model................................ : CpREV
+  Number of parameters............... : 5 (0 + 5 branch length estimates)
+ -lnL................................ = 1245.02
+     (seconds))
+
+Model................................ : CpREV+G
+  Number of parameters............... : 6 (1 + 5 branch length estimates)
+    gamma shape (4 rate categories).. = 0.407
+ -lnL................................ = 1217.78
+     (seconds))
+
+Model................................ : Blosum62
+  Number of parameters............... : 5 (0 + 5 branch length estimates)
+ -lnL................................ = 1244.09
+     (seconds))
+
+Model................................ : Blosum62+G
+  Number of parameters............... : 6 (1 + 5 branch length estimates)
+    gamma shape (4 rate categories).. = 0.453
+ -lnL................................ = 1223.34
+     (seconds))
+
+Model................................ : VT
+  Number of parameters............... : 5 (0 + 5 branch length estimates)
+ -lnL................................ = 1235.65
+     (seconds))
+
+Model................................ : VT+G
+  Number of parameters............... : 6 (1 + 5 branch length estimates)
+    gamma shape (4 rate categories).. = 0.471
+ -lnL................................ = 1215.97
+     (seconds))
+
+Model................................ : HIVb
+  Number of parameters............... : 5 (0 + 5 branch length estimates)
+ -lnL................................ = 1262.69
+     (seconds))
+
+Model................................ : HIVb+G
+  Number of parameters............... : 6 (1 + 5 branch length estimates)
+    gamma shape (4 rate categories).. = 0.323
+ -lnL................................ = 1218.80
+     (seconds))
+
+Model................................ : HIVw
+  Number of parameters............... : 5 (0 + 5 branch length estimates)
+ -lnL................................ = 1293.06
+     (seconds))
+
+Model................................ : HIVw+G
+  Number of parameters............... : 6 (1 + 5 branch length estimates)
+    gamma shape (4 rate categories).. = 0.271
+ -lnL................................ = 1238.11
+     (seconds))
+
+Model................................ : FLU
+  Number of parameters............... : 5 (0 + 5 branch length estimates)
+ -lnL................................ = 1267.09
+     (seconds))
+
+Model................................ : FLU+G
+  Number of parameters............... : 6 (1 + 5 branch length estimates)
+    gamma shape (4 rate categories).. = 0.291
+ -lnL................................ = 1222.57
+     (seconds))
+
+************************************************************
+Date   :  Sun Oct 27 14:35:38 CDT 2024
+Runtime:  0h:00:03
+
+
+
+***************************************************************************
+Best model according to AICc: JTT+G
+Confidence Interval: 100.0
+***************************************************************************
+Model          deltaAICc      AICc           AICcw          -lnL           
+---------------------------------------------------------------------------
+JTT+G          0.00           2434.39        0.99           1210.95        
+VT+G           10.04          2444.43        0.01           1215.97        
+CpREV+G        13.64          2448.03        0.00           1217.78        
+HIVb+G         15.69          2450.08        0.00           1218.80        
+WAG+G          19.38          2453.77        0.00           1220.64        
+FLU+G          23.24          2457.63        0.00           1222.57        
+Blosum62+G     24.77          2459.16        0.00           1223.34        
+LG+G           33.28          2467.67        0.00           1227.59        
+DCMut+G        43.35          2477.74        0.00           1232.63        
+Dayhoff+G      43.40          2477.78        0.00           1232.65        
+VT             47.25          2481.64        0.00           1235.65        
+JTT            52.31          2486.70        0.00           1238.18        
+HIVw+G         54.32          2488.71        0.00           1238.11        
+WAG            63.36          2497.75        0.00           1243.70        
+RtREV+G        63.80          2498.19        0.00           1242.85        
+Blosum62       64.14          2498.52        0.00           1244.09        
+CpREV          66.00          2500.39        0.00           1245.02        
+LG             91.42          2525.81        0.00           1257.74        
+HIVb           101.34         2535.73        0.00           1262.69        
+DCMut          108.84         2543.23        0.00           1266.45        
+Dayhoff        109.25         2543.64        0.00           1266.65        
+FLU            110.13         2544.51        0.00           1267.09        
+MtREV+G        115.86         2550.24        0.00           1268.88        
+RtREV          118.47         2552.86        0.00           1271.26        
+MtMam+G        128.38         2562.77        0.00           1275.14        
+HIVw           162.07         2596.46        0.00           1293.06        
+MtArt+G        165.67         2600.06        0.00           1293.79        
+MtREV          202.86         2637.24        0.00           1313.45        
+MtMam          269.51         2703.90        0.00           1346.78        
+MtArt          318.17         2752.56        0.00           1371.11        
+---------------------------------------------------------------------------
+---------------------------------------------------------------------------
+***********************************************
+Relative importance of parameters
+***********************************************
+  alpha       (+G):     1.000
+  p-inv       (+I):     No +I models
+  alpha+p-inv (+I+G):   No +I+G models
+  freqs       (+F):     No +F models
+
+***********************************************
+Model-averaged estimate of parameters
+***********************************************
+  alpha (+G):           0.394
+  p-inv (+I):           No +I models
+  alpha (+I+G):         No +I+G models
+  p-inv (+I+G):         No +I+G models
