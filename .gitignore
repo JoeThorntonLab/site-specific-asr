@@ -6,7 +6,6 @@
 tmp/
 local/
 *.sbatch
-ASR/
 snapshot/
 codeml.ctl
 rates
