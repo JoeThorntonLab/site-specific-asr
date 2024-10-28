@@ -13,8 +13,6 @@ knitr::opts_chunk$set(echo = TRUE,
                       message = FALSE)
 ```
 
-## Model systems for this study
-
 ```{r set up necessary data for analysis}
 
 #Load all required packages
@@ -49,31 +47,39 @@ ha.model.list <- c("H1", "H3", "FLU", "Poisson")
 
 ```
 
+# Load additional data for analysis
 
-## Among-site compositional heterogeneity
+For the analysis of empirical data, we wanted to identify sites throughout the
+tree that would be reconstructed as gaps given that there are some historical
+indels in the alignments. Typically, maximum likelihood ASR does not identify 
+these sites as gaps. Instead, it assigns states based on the empirical frequencies, 
+causing disagreements between reconstructions that are artifactual. To account,
+for these artifacts, we performed parsimony based ASR to identify sites that should 
+be reconstructed as gaps using Mesquite 3.70 (Maddison and Maddison 2021). To 
+simplify, we recoded the alignments to contain two states, G for sites with gaps, 
+and A for sites with an amino acid states. The resulting reconstructions, then, 
+can only have As or Gs, indicating the absence/presence of gaps in the reconstructions,
+respectively. These reconstructions are stored in a table in data/. The node numbers
+in those tables were modified to match the node numbering produced by DMSPhyloAA.
+
+The following chunk contains the  function, clean_gap_data, that takes the gap 
+reconstructions and puts them in a long format to later merge them with the 
+comparison between model reconstructions, so that we can correct for sites that 
+should be reconstructed as gaps.
+
 
 ```{r load parsimony gap data, include=FALSE, warning=FALSE}
 
-# For the analysis of empirical data, we wanted to identify sites throughout the
-# tree that would be reconstructed as gaps given that there are some historical
-# indels in the alignments. Typically, maximum likelihood ASR does not identify 
-# these sites as gaps. Instead, it assigns states based on the empirical frequencies, 
-# causing an artifact in which model selection appears to be important. 
-# artifact of the reconstruction algorithms. We performed parsimony based ASR to 
-# identify sites that should be reconstructed as gaps using Mesquite 3.70 (Maddison 
-# and Maddison 2021). We recoded the alignments to contain two states, G for sites
-# with gaps, and A for sites with an amino acid states. As such, sites that should
-# be reconstructed as gaps appear as Gs in the reconstructions along the tree.
 
 clean_gap_data <- function(path){
   
   # Read data from gaps in reconstructions
-  parsimony <- setDT(read.csv(path, header = TRUE))
+  parsimony <- setDT(read.csv(SR_gap_file, header = TRUE))
   
   # Change table to long format by transforming all nodes into a single column
-  parsimony <- melt(parsimony, id.vars = "site", 
+  parsimony <- setDT(melt(parsimony, id.vars = "site", 
                     measured.vars = 2:ncol(parsimony), 
-                    variable.name = "node")
+                    variable.name = "node"))
   
   # Reading the data adds a "X" to node names, change to actual node numbers
   parsimony[, node := as.numeric(gsub("[^0-9]", "", node))]
@@ -95,13 +101,12 @@ SR_gaps <- clean_gap_data(SR_gap_file)
 HA_gaps <- clean_gap_data(HA_gap_file)
 RBD_gaps <- clean_gap_data(RBD_gap_file)
 
-
 ```
 
 
+## Comparison of ancestral reconstructions between models
 
 
-## Reconstruction comparison among models
 
 ```{r ML set comparison}
 
@@ -233,6 +238,8 @@ ha.results <- list.files(path = results.path, pattern = "ha",
                          recursive = FALSE, full.names = FALSE, include.dirs = TRUE)
 
 
+model_pairs <- combn(sr.results, 2)
+self_comparisons <- t(matrix(sr.results, nrow = length(sr.results), ncol = 2))
 
 
 
