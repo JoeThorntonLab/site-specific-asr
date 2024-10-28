@@ -7,7 +7,6 @@ tmp/
 local/
 *.sbatch
 DMSPhyloAA_RBD/
-paml_best/
 paml_poisson/
 snapshot/
 codeml.ctl
