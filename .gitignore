@@ -6,7 +6,7 @@
 tmp/
 local/
 *.sbatch
-DMSPhyloAA_RBD/
+ASR/
 snapshot/
 codeml.ctl
 rates

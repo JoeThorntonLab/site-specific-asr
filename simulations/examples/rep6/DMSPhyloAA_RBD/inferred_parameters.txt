@@ -1,0 +1,6 @@
+DNA model: GTR
+   R (lower triangular; row-by-row): [1.         2.84378502 0.64796297 0.94594475 1.21730309 0.20487789]
+   PI: [0.30003239 0.22715161 0.19602422 0.27679177]
+ASRV shape: 0.49163654488449443 (number of categories: 4)
+Fitness function (logistic) parameters: [ 1.86201623e+00  9.78337693e+01 -3.56058010e-02]
+total log-likelihood: -938.1944
