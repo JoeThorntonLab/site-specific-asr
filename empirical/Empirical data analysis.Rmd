@@ -34,7 +34,7 @@ results.path <- file.path(paste0(here(), "/empirical/results/"))
 # Basic parameters of each system
 sr.alignment.size <- 76
 sr.tips <- 70
-sr.model.list <- c("C_teleta_SR", "HsMR", "JTT", "Poisson") 
+sr.model.list <- c("C_teleta_sr", "HsMR", "JTT", "Poisson") 
 
 rbd.alignment.size <- 182
 rbd.tips <- 37
@@ -47,7 +47,16 @@ ha.model.list <- c("H1", "H3", "FLU", "Poisson")
 
 ```
 
-# Load additional data for analysis
+# Pairwise comparison of reconstructions using site-specific and site-homogeneous substitution models
+
+The first stage of our analysis consisted in comparing the ancestral sequence
+reconstructions made using real protein alignments and a pre-determined topology.
+
+Using DMSPhyloAA, we obtained site-specific (SS) and site-homogeneous reconstructions
+site-homogeneous (SH) models were used
+
+
+
 
 For the analysis of empirical data, we wanted to identify sites throughout the
 tree that would be reconstructed as gaps given that there are some historical
@@ -62,19 +71,18 @@ can only have As or Gs, indicating the absence/presence of gaps in the reconstru
 respectively. These reconstructions are stored in a table in data/. The node numbers
 in those tables were modified to match the node numbering produced by DMSPhyloAA.
 
-The following chunk contains the  function, clean_gap_data, that takes the gap 
-reconstructions and puts them in a long format to later merge them with the 
-comparison between model reconstructions, so that we can correct for sites that 
-should be reconstructed as gaps.
-
 
 ```{r load parsimony gap data, include=FALSE, warning=FALSE}
 
+# The following function, clean.gap.data, that takes the gap reconstructions and 
+# puts them in a long format to later merge them with the comparison between model 
+# reconstructions, so that we can correct for sites that  should be reconstructed 
+# as gaps.
 
-clean_gap_data <- function(path){
+clean.gap.data <- function(path){
   
   # Read data from gaps in reconstructions
-  parsimony <- setDT(read.csv(SR_gap_file, header = TRUE))
+  parsimony <- setDT(read.csv(path, header = TRUE))
   
   # Change table to long format by transforming all nodes into a single column
   parsimony <- setDT(melt(parsimony, id.vars = "site", 
@@ -93,30 +101,39 @@ clean_gap_data <- function(path){
 
 }
 
-SR_gap_file <- file.path(paste0(data.path, "/sr_parsimony_gaps.csv"))
-HA_gap_file <- file.path(paste0(data.path, "/ha_parsimony_gaps.csv"))
-RBD_gap_file <- file.path(paste0(data.path, "/rbd_parsimony_gaps.csv"))
+# Read files with gaps by parsimony
+sr_gap_file <- file.path(paste0(data.path, "/sr_parsimony_gaps.csv"))
+ha_gap_file <- file.path(paste0(data.path, "/ha_parsimony_gaps.csv"))
+rbd_gap_file <- file.path(paste0(data.path, "/rbd_parsimony_gaps.csv"))
 
-SR_gaps <- clean_gap_data(SR_gap_file)
-HA_gaps <- clean_gap_data(HA_gap_file)
-RBD_gaps <- clean_gap_data(RBD_gap_file)
+# Use clean.gap.data() to organize information
+sr.gaps <- clean.gap.data(sr_gap_file)
+ha.gaps <- clean.gap.data(ha_gap_file)
+rbd.gaps <- clean.gap.data(rbd_gap_file)
 
 ```
 
+With the gap data in the appropriate format, now we can perform the site-by-site
+comparisons between reconstructions using the different models in each protein
+system.
 
-## Comparison of ancestral reconstructions between models
+The directories in **results/** have a subdirectory called **ASR/** that contains
+the ML reconstruction of every node (*.txt) and the table with posterior
+probability of reconstructions of every state at every site in each node (*_PP.txt).
+To compare the ML reconstruction, we need to load the ML sequence at each node and
+make the pairwise comparison between the available models in each protein family.
 
 
+```{r parwise comparison of ML sequences}
 
-```{r ML set comparison}
-
-# This function takes in two model names, an alignment size, a path to the model data,
-# and a vector of gaps.
-# It reconstructs the sequences for each node in the models, compares them, and stores
-# the results in a data table.
-# If a gap is detected at a given site, the "true_mismatch" column is set to "identical".
-# Otherwise, the "true_mismatch" column reflects the comparison result from "mismatch" column.
-compare_ml_states <- function(model_1, model_2, alignment_size, gaps) {
+# The next function takes the paths two two models that are being compared, reads
+# the ML ancestral sequence produced by each model, matches them by node and site,
+# and compares if the reconstructed state is the "identical", or if it is a 
+# "disagreement" between models. Then, it incorporates the gap data and corrects
+# for sites where a gap should be reconstructed and recodifies the as "identical"
+# reconstructions in a column named "true_mismatch". The pairwise comparison is
+# stored in a data table.
+compare.ml.states <- function(model_1, model_2, alignment_size, gaps) {
   
   # Create a site vector from 1 to the alignment size
   site <- 1:alignment_size
@@ -163,7 +180,6 @@ compare_ml_states <- function(model_1, model_2, alignment_size, gaps) {
   # otherwise it reflects the comparison result from the "mismatch" column
   site_comparison[, true_mismatch := ifelse(gap == "gap", "identical", mismatch)]
   
-  
   # Extract model name
   model_1 <- sub(".*_", "", model_1) 
   model_2 <- sub(".*_", "", model_2)
@@ -179,8 +195,62 @@ compare_ml_states <- function(model_1, model_2, alignment_size, gaps) {
   return(site_comparison)
 }
 
-summary_reconstruction_identity <- function(dt_list, model_pairs, model_names){
+# Organize models by how well they fit the data by their AIC.
+sr.model.list <- c("er", "mr", "jtt", "poisson") 
+rbd.model.list <- c("sars", "wag", "poisson") 
+ha.model.list <- c("h1", "h3", "flu", "poisson") 
 
+# Create paths to the directories with the reconstructions for each protein
+# family, reorder to match AIC, and establish the pairwise comparisons that will
+# be made between models
+
+sr.results.path <- list.files(path = results.path, pattern = "sr",
+                         recursive = FALSE, 
+                         full.names = FALSE, 
+                         include.dirs = TRUE)
+sr.results.path <- sr.results.path[order(c(3,4,1,2))]
+sr.model.pairs <- combn(sr.results.path, 2)
+
+rbd.results.path <- list.files(path = results.path, pattern = "rbd",
+                         recursive = FALSE, 
+                         full.names = FALSE, 
+                         include.dirs = TRUE)
+rbd.results.path <- rbd.results.path[order(c(3,2,1))]
+rbd.model.pairs <- combn(rbd.results.path, 2)
+
+ha.results.path <- list.files(path = results.path, pattern = "ha",
+                         recursive = FALSE, 
+                         full.names = FALSE, 
+                         include.dirs = TRUE)
+ha.results.path <- ha.results.path[order(c(3,4,1,2))]
+ha.model.pairs <- combn(ha.results.path, 2)
+
+# Apply compare.ml.states() to the pairs of models to obtain lists with each
+# pairwise comparison
+
+sr_model_comparison_list <- lapply(seq_len(ncol(sr.model.pairs)), function(i) {
+  compare.ml.states(sr.model.pairs[1, i], sr.model.pairs[2, i], sr.alignment.size, sr.gaps)
+})
+
+rbd_model_comparison_list <- lapply(seq_len(ncol(rbd.model.pairs)), function(i) {
+  compare.ml.states(rbd.model.pairs[1, i], rbd.model.pairs[2, i], rbd.alignment.size, rbd.gaps)
+})
+
+ha_model_comparison_list <- lapply(seq_len(ncol(ha.model.pairs)), function(i) {
+  compare.ml.states(ha.model.pairs[1, i], ha.model.pairs[2, i], ha.alignment.size, ha.gaps)
+})
+
+# From the lists, we can calculate the number and percentage of identical/disagreeing
+# reconstructions for the entire tree. The following function takes the list with
+# comparisons, calculates the total number and percentage of identical reconstructions
+# and disagreements, and puts together a single data table with the summarized data
+# for all comparisons. To simplify format in the figures, it also adds the self
+# comparisons within models, which by definition should always be 100%.
+
+summary.reconstruction.identity <- function(dt_list, model_pairs, model_names){
+  
+  # Pre-allocate output data table that will contain the data for all the pairwise
+  # comparisons of each protein family
   model_comparison <- data.table(true_mismatch = character(), 
                            count = integer(), 
                            percentage = numeric(),
@@ -188,23 +258,32 @@ summary_reconstruction_identity <- function(dt_list, model_pairs, model_names){
                            model_b = character(),
                            stringsAsFactors = FALSE)
   
+  # Loop through all comparisons in the list
   for(i in 1:length(dt_list)){
   
-  site_comparison <- dt_list[[i]]
-  site_comparison <- site_comparison[, .(count = .N), by = true_mismatch][,
-    # Calculate the percentage of occurrences for each true_mismatch value 
-    percentage := count/nrow(site_comparison)*100][]
+    # Locally store each data table in the list to compare
+    site_comparison <- dt_list[[i]]
   
-  model_a <- sub(".*_", "", model_pairs[1, i]) 
-  model_b <- sub(".*_", "", model_pairs[2, i])
+    # Calculate the total number and percentage of "identical" and "disagreement" 
+    # in the true_mismatch column. Percentages are relative to the total number of
+    # reconstructions in the entire tree
+    site_comparison <- site_comparison[, .(count = .N), by = true_mismatch][,
+      percentage := count/nrow(site_comparison)*100][]
   
-  site_comparison[, model_a := model_a]
-  site_comparison[, model_b := model_b]
+    # Store the names of the compared models within each table, which should
+    # match those in the model pair table
+    model_a <- sub(".*_", "", model_pairs[1, i]) 
+    model_b <- sub(".*_", "", model_pairs[2, i])
   
-  model_comparison <- rbind(model_comparison, site_comparison)
-  
+    # Add model names to the rest of the summarized table
+    site_comparison[, model_a := model_a]
+    site_comparison[, model_b := model_b]
+    
+    # Append data to the main table
+    model_comparison <- rbind(model_comparison, site_comparison)
   }
   
+  # Generate table with the self-comparisons between models. 
   self_comparisons <- data.table(true_mismatch = "identical", 
                            count = nrow(dt_list[[1]]), 
                            percentage = 100,
@@ -212,246 +291,64 @@ summary_reconstruction_identity <- function(dt_list, model_pairs, model_names){
                            model_b = model_names,
                            stringsAsFactors = FALSE)
   
+  # Append self comparisons with main data table
   model_comparison <- rbind(model_comparison, self_comparisons)
   
   return(model_comparison)
 }
 
-
-
-# 
-
-sr.model.list <- c("er", "mr", "jtt", "poisson") 
-
-sr.results.path <- list.files(path = results.path, pattern = "sr",
-                         recursive = FALSE, full.names = FALSE, include.dirs = TRUE)
-sr.results.path <- sr.results.path[order(c(3,4,1,2))]
-sr.model.pairs <- combn(sr.results.path, 2)
-
-
-rbd.model.list <- c("sars", "wag", "poisson") 
-rbd.results.path <- list.files(path = results.path, pattern = "rbd",
-                         recursive = FALSE, full.names = FALSE, include.dirs = TRUE)
-rbd.results.path <- rbd.results.path[order(c(3,2,1))]
-rbd.model.pairs <- combn(rbd.results.path, 2)
-
-ha.model.list <- c("h1", "h3", "flu", "poisson") 
-ha.results.path <- list.files(path = results.path, pattern = "ha",
-                         recursive = FALSE, full.names = FALSE, include.dirs = TRUE)
-ha.results.path <- ha.results.path[order(c(3,4,1,2))]
-ha.model.pairs <- combn(ha.results.path, 2)
-
-
-# Loop over each pairwise combination and compare models
-SR_model_comparison_list <- lapply(seq_len(ncol(sr.model.pairs)), function(i) {
-  compare_ml_states(sr.model.pairs[1, i], sr.model.pairs[2, i], sr.alignment.size, SR_gaps)
-})
-
-sr.identity.summary <- summary_reconstruction_identity(SR_model_comparison_list, sr.model.pairs, sr.model.list)
-
+# Apply summary.reconstruction.identity() to summarize the data of each protein 
+# family and organize in factors to plot an organized matrix later
+sr.identity.summary <- summary.reconstruction.identity(sr_model_comparison_list, sr.model.pairs, sr.model.list)
 sr.identity.summary$model_a <- factor(sr.identity.summary$model_a, levels = sr.model.list)
 sr.identity.summary$model_b <- factor(sr.identity.summary$model_b, levels = rev(sr.model.list))
 
-
-rbd_model_comparison_list <- lapply(seq_len(ncol(rbd.model.pairs)), function(i) {
-  compare_ml_states(rbd.model.pairs[1, i], rbd.model.pairs[2, i], rbd.alignment.size, RBD_gaps)
-})
-
-rbd.identity.summary <- summary_reconstruction_identity(rbd_model_comparison_list, rbd.model.pairs, rbd.model.list)
-
+rbd.identity.summary <- summary.reconstruction.identity(rbd_model_comparison_list, rbd.model.pairs, rbd.model.list)
 rbd.identity.summary$model_a <- factor(rbd.identity.summary$model_a, levels = rbd.model.list)
 rbd.identity.summary$model_b <- factor(rbd.identity.summary$model_b, levels = rev(rbd.model.list))
 
-
-ha_model_comparison_list <- lapply(seq_len(ncol(ha.model.pairs)), function(i) {
-  compare_ml_states(ha.model.pairs[1, i], ha.model.pairs[2, i], ha.alignment.size, HA_gaps)
-})
-
-ha.identity.summary <- summary_reconstruction_identity(rbd_model_comparison_list, ha.model.pairs, ha.model.list)
-
+ha.identity.summary <- summary.reconstruction.identity(ha_model_comparison_list, ha.model.pairs, ha.model.list)
 ha.identity.summary$model_a <- factor(ha.identity.summary$model_a, levels = ha.model.list)
 ha.identity.summary$model_b <- factor(ha.identity.summary$model_b, levels = rev(ha.model.list))
 
+```
 
+```{r plot comparisons of ML reconstructions}
 
-
-
-ggplot(ha.identity.summary[true_mismatch == "identical"], aes(x = model_a, y = model_b)) +
-  geom_tile(color = "black", fill = "white") +
+# Function to plot data using the same characteristics
+plot.pairwise.ML <- function(summarized_dt){
+  
+  # Only the percentages for identical reconstructions is plotted
+  plot <- ggplot(summarized_dt[true_mismatch == "identical"], aes(x = model_a, y = model_b)) +
+  geom_tile(color = "black", fill = "grey60") +
   geom_text(aes(label = round(percentage, digits = 1)), size = 8) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         aspect.ratio = 1) +
-  labs(x = "ML states",
-       y = "ML states",
+  labs(x = "ML reconstructions",
+       y = "ML reconstructions",
        fill = "Identity (%)")
-
-
-
-
-plot.main.comparison <- function(table, color_choice){
-  plot <- ggplot(table, aes(x = model_1, y = model_2)) +
-  geom_tile(color = "black", fill = color_choice) +
-  geom_text(aes(label = round(identical_states_percent, digits = 1)), size = 8) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        aspect.ratio = 1) +
-  labs(x = "ML states",
-       y = "ML states",
-       fill = "Identity (%)")
+  
   return(plot)
 }
 
-
-
-```
-
-
-```{r}
-
-
-SR_model_comparison_list[[2]]
-write.csv(SR_model_comparison_list[[2]], file = "SR_SS_SH_data.csv", row.names = FALSE)
-
-
-HA_model_comparison_list[[2]]
-write.csv(HA_model_comparison_list[[2]], file = "HA_SS_SH_data.csv", row.names = FALSE)
-
-RBD_model_comparison_list[[1]]
-write.csv(RBD_model_comparison_list[[1]], file = "RBD_SS_SH_data.csv", row.names = FALSE)
+plot.pairwise.ML(sr.identity.summary)  
+plot.pairwise.ML(rbd.identity.summary)  
+plot.pairwise.ML(ha.identity.summary)  
 
 ```
 
 
-## Load site specific data
+```{r obtain AllAlt reconstructions of all models}
 
-```{r append site-specific data to the comparisons}
-
-## Parsimony data ##
-read_parsimony_data <- function(node_directory, parsimony_file_path){
-
-  #Get nodes in the same order as they load into R
-  node_file_list <- list.files(node_directory, pattern = "[0-9]{1,3}.txt")
-  nodes <- c("site", gsub(".*?([0-9]+).*", "\\1", node_file_list))
-
-  # Load parsimony table and correct column names to reflect the node
-  parsimony <- read.csv(parsimony_file_path) 
-  colnames(parsimony) <- c("site", gsub(".*?([0-9]+).*", "\\1", colnames(parsimony)[-1]))
-  
-  # Order columns according to how they load into R
-  parsimony <- parsimony[, nodes]
-
-  # Put everything into a tibble and modify to reflect ambiguity
-  parsimony_data <- parsimony %>%
-    gather("node", "pars_state", -1) %>% 
-    mutate(pars_amb = ifelse(nchar(pars_state) > 1, "ambiguous", "unambiguous"))
-
-  return(parsimony_data[, c("pars_amb", "pars_state")])
-}
-
-
-## Rate of evolution ##
-get_evol_rate <- function(file_path) {
-  evol_rates <- read.csv(file_path)
-  evol_rates$Posterior.mean
-}
-
-## Sequence entropy ##
-get_sequence_entropy <- function(file_path) {
-  sequence_entropy <- read.csv(file_path)
-  sequence_entropy$entropy
-}
-
-
-shannon_entropy <- function(df) {
-  # Replace zeros with a small non-zero value
-  df[df == 0] <- 1e-20
-  
-  # Get the Shannon entropy of the values in each row
-  entropy <- apply(df, 1, function(x) {
-    -sum(x * log(x, base = 20)) # As in 20 amino acid states
-  })
-  
-  # Return the entropy
-  return(entropy)
-}
-
-
-max_per_row <- function(df) {
-  # Get the maximum value in each row
-  max_vals <- apply(df, 1, max)
-  
-  # Return the maximum values
-  return(max_vals)
-}
-
-aa_order <- c("A", "R", "N", "D", "C", "Q", "E", "G", "H", "I", 
-              "L", "K", "M", "F", "P", "S", "T", "W", "Y", "V")
-
-
-# Loop over the list and cbind each data table with extra_data
-SR_parsimony <- read_parsimony_data(SR_node_order, "C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/SR_parsimony.csv")
-SR_rates <- get_evol_rate("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/SR_phyml.csv")
-SR_entropy <- get_sequence_entropy("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/SR_entropy.csv")
-
-
-for(i in seq_along(SR_model_comparison_list)) {
-  table <- cbind(SR_model_comparison_list[[i]], SR_parsimony)
-  table[, true_amb := ifelse(gap == "gap", "unambiguous", pars_amb)]
-  SR_model_comparison_list[[i]] <- cbind(table, 
-                                         rates = SR_rates, 
-                                         entropy = SR_entropy)
-}
-
-
-HA_parsimony <- read_parsimony_data(HA_node_order, "C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/HA_parsimony.csv")
-HA_rates <- get_evol_rate("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/HA_phyml.csv")
-HA_entropy <- get_sequence_entropy("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/HA_entropy.csv")
-
-
-
-for(i in seq_along(HA_model_comparison_list)) {
-  table <- cbind(HA_model_comparison_list[[i]], HA_parsimony)
-  table[, true_amb := ifelse(gap == "gap", "unambiguous", pars_amb)]
-  HA_model_comparison_list[[i]] <- cbind(table, 
-                                         rates = HA_rates, 
-                                         entropy = HA_entropy)
-}
-
-
-RBD_parsimony <- read_parsimony_data(RBD_node_order, "C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/RBD_parsimony.csv")
-RBD_rates <- get_evol_rate("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/RBD_phyml.csv")
-RBD_entropy <- get_sequence_entropy("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/RBD_entropy.csv")
-
-
-for(i in seq_along(RBD_model_comparison_list)) {
-  table <- cbind(RBD_model_comparison_list[[i]], RBD_parsimony)
-  table[, true_amb := ifelse(gap == "gap", "unambiguous", pars_amb)]
-  RBD_model_comparison_list[[i]] <- cbind(table, 
-                                         rates = RBD_rates, 
-                                         entropy = RBD_entropy)
-}
-
-
-# The comparisons of C. teleta with HsMR, JTT and Poisson have the index 1, 2,
-# and 3, respectively
-
-# The comparisons of H1 with H3, FLU and Poisson have the index 1, 2,
-# and 3, respectively
-
-# The comparisons of SARS-CoV-2 with WAG and Poisson have the index 1, and 2,
-# respectively
-
-```
-
-
-
-
-
-```{r plausible set comparison}
-# Define function to get the matches between two reconstructed sequences
-get_mismatch <- function(seq1, seq2) {
-  matches <- charToRaw(seq1) == charToRaw(seq2)
-  return(matches)
-}
+table <- fread("C:/Users/rmuniztrejo/Documents/git_repos/site-specific-asr/empirical/results/ha_sh_flu/ASR/2_PP.txt")
+max_val <- max(table[1,])
+    
+    # find the index of the maximum value in the row
+    # there could be sites with two max values, only pick the first one [1]
+    max_index <- colnames(table)[which(table[1,] == max_val)[1]] 
+?colnames
+max(table[1,])
+?fread
 
 # define function to obtain the AltAll sequences under different ambiguity criteria
 get_alt_all_seq <- function(pp_table, threshold, condition) {
@@ -519,6 +416,21 @@ get_alt_all_seq <- function(pp_table, threshold, condition) {
   # return the results vector as a single protein sequence
   return(paste0(results, collapse=""))
 }
+
+
+
+```
+
+
+
+
+```{r plausible set comparison}
+# Define function to get the matches between two reconstructed sequences
+get_mismatch <- function(seq1, seq2) {
+  matches <- charToRaw(seq1) == charToRaw(seq2)
+  return(matches)
+}
+
 
 
 
@@ -598,7 +510,7 @@ compare_alt_states <- function(model_1, model_2, alignment_size, model_path, gap
   return(PP_tibble)
 }
 
-## SR DBD with only 3 DMS datasets
+## sr DBD with only 3 DMS datasets
 
 # Generate all pairwise combinations and self-comparison of models
 model_pairs <- combn(sr.model.list, 2)
@@ -606,24 +518,24 @@ model_pairs_swapped <- apply(model_pairs, 2, rev)
 model_pairs <- cbind(model_pairs, model_pairs_swapped)
 
 # Loop over each pairwise combination and compare models
-SR_alt_comparison_list <- lapply(seq_len(ncol(model_pairs)), function(i) {
-  compare_alt_states(model_pairs[1, i], model_pairs[2, i], sr.alignment.size, sr.path, SR_gaps)
+sr_alt_comparison_list <- lapply(seq_len(ncol(model_pairs)), function(i) {
+  compare_alt_states(model_pairs[1, i], model_pairs[2, i], sr.alignment.size, sr.path, sr.gaps)
 })
 
 # Summarise identical and disagreeing states into a data frame
-SR_alt_disagreements_table <- data.frame()
+sr_alt_disagreements_table <- data.frame()
 
-for(i in 1:length(SR_alt_comparison_list)){
-  model_disagreement_data <- summarise_disagreements(SR_alt_comparison_list[[i]], 
+for(i in 1:length(sr_alt_comparison_list)){
+  model_disagreement_data <- summarise_disagreements(sr_alt_comparison_list[[i]], 
                           sr.alignment.size)
-    SR_alt_disagreements_table <- rbind(SR_alt_disagreements_table, 
+    sr_alt_disagreements_table <- rbind(sr_alt_disagreements_table, 
                                         model_disagreement_data)
 }
 
 
 # Organize models by their AIC value
-SR_alt_disagreements_table$model_1 <- factor(SR_alt_disagreements_table$model_1, levels = rev(sr.model.list))
-SR_alt_disagreements_table$model_2 <- factor(SR_alt_disagreements_table$model_2, levels = sr.model.list)
+sr_alt_disagreements_table$model_1 <- factor(sr_alt_disagreements_table$model_1, levels = rev(sr.model.list))
+sr_alt_disagreements_table$model_2 <- factor(sr_alt_disagreements_table$model_2, levels = sr.model.list)
 
 
 ## Hemagglutinin
@@ -634,28 +546,28 @@ model_pairs_swapped <- apply(model_pairs, 2, rev)
 model_pairs <- cbind(model_pairs, model_pairs_swapped)
 
 # Loop over each pairwise combination and compare models
-HA_alt_comparison_list <- lapply(seq_len(ncol(model_pairs)), function(i) {
-  compare_alt_states(model_pairs[1, i], model_pairs[2, i], ha.alignment.size, ha.path, HA_gaps)
+ha_alt_comparison_list <- lapply(seq_len(ncol(model_pairs)), function(i) {
+  compare_alt_states(model_pairs[1, i], model_pairs[2, i], ha.alignment.size, ha.path, ha.gaps)
 })
 
 # Summarise identical and disagreeing states into a data frame
-HA_alt_disagreements_table <- data.frame()
+ha_alt_disagreements_table <- data.frame()
 
-for(i in 1:length(HA_alt_comparison_list)){
-  model_disagreement_data <- summarise_disagreements(HA_alt_comparison_list[[i]], 
+for(i in 1:length(ha_alt_comparison_list)){
+  model_disagreement_data <- summarise_disagreements(ha_alt_comparison_list[[i]], 
                           ha.alignment.size)
-    HA_alt_disagreements_table <- rbind(HA_alt_disagreements_table, 
+    ha_alt_disagreements_table <- rbind(ha_alt_disagreements_table, 
                                         model_disagreement_data)
 }
 
 # Organize models by their AIC v
-HA_alt_disagreements_table$model_1 <- factor(HA_alt_disagreements_table$model_1, levels = rev(ha.model.list))
-HA_alt_disagreements_table$model_2 <- factor(HA_alt_disagreements_table$model_2, levels = ha.model.list)
+ha_alt_disagreements_table$model_1 <- factor(ha_alt_disagreements_table$model_1, levels = rev(ha.model.list))
+ha_alt_disagreements_table$model_2 <- factor(ha_alt_disagreements_table$model_2, levels = ha.model.list)
 
 
 
 
-## Spike RBD 
+## Spike rbd 
 
 # Generate all pairwise combinations and self-comparison of models
 model_pairs <- combn(rbd.model.list, 2)
@@ -663,50 +575,185 @@ model_pairs_swapped <- apply(model_pairs, 2, rev)
 model_pairs <- cbind(model_pairs, model_pairs_swapped)
 
 # Loop over each pairwise combination and compare models
-RBD_alt_comparison_list <- lapply(seq_len(ncol(model_pairs)), function(i) {
-  compare_alt_states(model_pairs[1, i], model_pairs[2, i], rbd.alignment.size, rbd.path, RBD_gaps)
+rbd_alt_comparison_list <- lapply(seq_len(ncol(model_pairs)), function(i) {
+  compare_alt_states(model_pairs[1, i], model_pairs[2, i], rbd.alignment.size, rbd.path, rbd.gaps)
 })
 
 # Summarise identical and disagreeing states into a data frame
-RBD_alt_disagreements_table <- data.frame()
+rbd_alt_disagreements_table <- data.frame()
 
-for(i in 1:length(RBD_alt_comparison_list)){
-  model_disagreement_data <- summarise_disagreements(RBD_alt_comparison_list[[i]], 
+for(i in 1:length(rbd_alt_comparison_list)){
+  model_disagreement_data <- summarise_disagreements(rbd_alt_comparison_list[[i]], 
                           rbd.alignment.size)
-    RBD_alt_disagreements_table <- rbind(RBD_alt_disagreements_table, 
+    rbd_alt_disagreements_table <- rbind(rbd_alt_disagreements_table, 
                                         model_disagreement_data)
 }
 
 # Organize models by their AIC value
-RBD_alt_disagreements_table$model_1 <- factor(RBD_alt_disagreements_table$model_1, levels = rev(rbd.model.list))
-RBD_alt_disagreements_table$model_2 <- factor(RBD_alt_disagreements_table$model_2, levels = rbd.model.list)
+rbd_alt_disagreements_table$model_1 <- factor(rbd_alt_disagreements_table$model_1, levels = rev(rbd.model.list))
+rbd_alt_disagreements_table$model_2 <- factor(rbd_alt_disagreements_table$model_2, levels = rbd.model.list)
 
 
 ```
+
+
+
+
+
+
+
+
+
+
+## Load site specific data
+
+```{r append site-specific data to the comparisons}
+
+## Parsimony data ##
+read_parsimony_data <- function(node_directory, parsimony_file_path){
+
+  #Get nodes in the same order as they load into R
+  node_file_list <- list.files(node_directory, pattern = "[0-9]{1,3}.txt")
+  nodes <- c("site", gsub(".*?([0-9]+).*", "\\1", node_file_list))
+
+  # Load parsimony table and correct column names to reflect the node
+  parsimony <- read.csv(parsimony_file_path) 
+  colnames(parsimony) <- c("site", gsub(".*?([0-9]+).*", "\\1", colnames(parsimony)[-1]))
+  
+  # Order columns according to how they load into R
+  parsimony <- parsimony[, nodes]
+
+  # Put everything into a tibble and modify to reflect ambiguity
+  parsimony_data <- parsimony %>%
+    gather("node", "pars_state", -1) %>% 
+    mutate(pars_amb = ifelse(nchar(pars_state) > 1, "ambiguous", "unambiguous"))
+
+  return(parsimony_data[, c("pars_amb", "pars_state")])
+}
+
+
+## Rate of evolution ##
+get_evol_rate <- function(file_path) {
+  evol_rates <- read.csv(file_path)
+  evol_rates$Posterior.mean
+}
+
+## Sequence entropy ##
+get_sequence_entropy <- function(file_path) {
+  sequence_entropy <- read.csv(file_path)
+  sequence_entropy$entropy
+}
+
+
+shannon_entropy <- function(df) {
+  # Replace zeros with a small non-zero value
+  df[df == 0] <- 1e-20
+  
+  # Get the Shannon entropy of the values in each row
+  entropy <- apply(df, 1, function(x) {
+    -sum(x * log(x, base = 20)) # As in 20 amino acid states
+  })
+  
+  # Return the entropy
+  return(entropy)
+}
+
+
+max_per_row <- function(df) {
+  # Get the maximum value in each row
+  max_vals <- apply(df, 1, max)
+  
+  # Return the maximum values
+  return(max_vals)
+}
+
+aa_order <- c("A", "R", "N", "D", "C", "Q", "E", "G", "H", "I", 
+              "L", "K", "M", "F", "P", "S", "T", "W", "Y", "V")
+
+
+# Loop over the list and cbind each data table with extra_data
+sr_parsimony <- read_parsimony_data(sr_node_order, "C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/sr_parsimony.csv")
+sr_rates <- get_evol_rate("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/sr_phyml.csv")
+sr_entropy <- get_sequence_entropy("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/sr_entropy.csv")
+
+
+for(i in seq_along(sr_model_comparison_list)) {
+  table <- cbind(sr_model_comparison_list[[i]], sr_parsimony)
+  table[, true_amb := ifelse(gap == "gap", "unambiguous", pars_amb)]
+  sr_model_comparison_list[[i]] <- cbind(table, 
+                                         rates = sr_rates, 
+                                         entropy = sr_entropy)
+}
+
+
+ha_parsimony <- read_parsimony_data(ha_node_order, "C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/ha_parsimony.csv")
+ha_rates <- get_evol_rate("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/ha_phyml.csv")
+ha_entropy <- get_sequence_entropy("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/ha_entropy.csv")
+
+
+
+for(i in seq_along(ha_model_comparison_list)) {
+  table <- cbind(ha_model_comparison_list[[i]], ha_parsimony)
+  table[, true_amb := ifelse(gap == "gap", "unambiguous", pars_amb)]
+  ha_model_comparison_list[[i]] <- cbind(table, 
+                                         rates = ha_rates, 
+                                         entropy = ha_entropy)
+}
+
+
+rbd_parsimony <- read_parsimony_data(rbd_node_order, "C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/rbd_parsimony.csv")
+rbd_rates <- get_evol_rate("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/rbd_phyml.csv")
+rbd_entropy <- get_sequence_entropy("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/rbd_entropy.csv")
+
+
+for(i in seq_along(rbd_model_comparison_list)) {
+  table <- cbind(rbd_model_comparison_list[[i]], rbd_parsimony)
+  table[, true_amb := ifelse(gap == "gap", "unambiguous", pars_amb)]
+  rbd_model_comparison_list[[i]] <- cbind(table, 
+                                         rates = rbd_rates, 
+                                         entropy = rbd_entropy)
+}
+
+
+# The comparisons of C. teleta with HsMR, JTT and Poisson have the index 1, 2,
+# and 3, respectively
+
+# The comparisons of H1 with H3, FLU and Poisson have the index 1, 2,
+# and 3, respectively
+
+# The comparisons of SARS-CoV-2 with WAG and Poisson have the index 1, and 2,
+# respectively
+
+```
+
+
+
+
+
 
 ```{r save alt all data}
 
 misc_path <- file.path(here(), "results/empirical/misc/")
 
 # Among-site compositional heterogeineity Alt All reconstructions
-write.csv(SR_alt_comparison_list[[2]], file = file.path(misc_path, "SR_among_site_alt_data.csv"), row.names = FALSE)
-write.csv(RBD_alt_comparison_list[[1]], file = file.path(misc_path, "RBD_among_site_alt_data.csv"), row.names = FALSE)
-write.csv(HA_alt_comparison_list[[2]], file = file.path(misc_path, "HA_among_site_alt_data.csv"), row.names = FALSE)
+write.csv(sr_alt_comparison_list[[2]], file = file.path(misc_path, "sr_among_site_alt_data.csv"), row.names = FALSE)
+write.csv(rbd_alt_comparison_list[[1]], file = file.path(misc_path, "rbd_among_site_alt_data.csv"), row.names = FALSE)
+write.csv(ha_alt_comparison_list[[2]], file = file.path(misc_path, "ha_among_site_alt_data.csv"), row.names = FALSE)
 
 # Among-lineage compositional heterogeineity Alt All reconstructions
-write.csv(SR_alt_comparison_list[[1]], file = file.path(misc_path, "SR_among_lineage_alt_data.csv"), row.names = FALSE)
-write.csv(HA_alt_comparison_list[[1]], file = file.path(misc_path, "HA_among_lineage_alt_data.csv"), row.names = FALSE)
+write.csv(sr_alt_comparison_list[[1]], file = file.path(misc_path, "sr_among_lineage_alt_data.csv"), row.names = FALSE)
+write.csv(ha_alt_comparison_list[[1]], file = file.path(misc_path, "ha_among_lineage_alt_data.csv"), row.names = FALSE)
 
 ```
 
 ```{r read alt all data}
 
-sr.among.site.alt.data <- as.data.table(read.csv(file.path(misc_path, "SR_among_site_alt_data.csv")))
-rbd.among.site.alt.data <- as.data.table(read.csv(file.path(misc_path, "RBD_among_site_alt_data.csv")))
-ha.among.site.alt.data <- as.data.table(read.csv(file.path(misc_path, "HA_among_site_alt_data.csv")))
+sr.among.site.alt.data <- as.data.table(read.csv(file.path(misc_path, "sr_among_site_alt_data.csv")))
+rbd.among.site.alt.data <- as.data.table(read.csv(file.path(misc_path, "rbd_among_site_alt_data.csv")))
+ha.among.site.alt.data <- as.data.table(read.csv(file.path(misc_path, "ha_among_site_alt_data.csv")))
 
-sr.among.lineage.alt.data <- as.data.table(read.csv(file.path(misc_path, "SR_among_lineage_alt_data.csv")))
-ha.among.lineage.alt.data <- as.data.table(read.csv(file.path(misc_path, "HA_among_lineage_alt_data.csv")))
+sr.among.lineage.alt.data <- as.data.table(read.csv(file.path(misc_path, "sr_among_lineage_alt_data.csv")))
+ha.among.lineage.alt.data <- as.data.table(read.csv(file.path(misc_path, "ha_among_lineage_alt_data.csv")))
 
 
 ```
@@ -767,9 +814,9 @@ get_contingency_table <- function(table_1, table_2){
   print(paste("Fisher's exact test, p-value: ", fisher_test$p.value))
 }
 
-get_contingency_table(SR_model_comparison_list[[2]], sr.among.site.alt.data)
-get_contingency_table(RBD_model_comparison_list[[1]], rbd.among.site.alt.data)
-get_contingency_table(HA_model_comparison_list[[2]], ha.among.site.alt.data)
+get_contingency_table(sr_model_comparison_list[[2]], sr.among.site.alt.data)
+get_contingency_table(rbd_model_comparison_list[[1]], rbd.among.site.alt.data)
+get_contingency_table(ha_model_comparison_list[[2]], ha.among.site.alt.data)
 
 ```
 
@@ -808,62 +855,62 @@ plot.alt.comparison <- function(table, color_choice){
 ############################################################
 
 
-SR_main_model_disagreement <- filter(SR_model_disagreements_table, model_2 != "HsMR") %>% 
+sr_main_model_disagreement <- filter(sr_model_disagreements_table, model_2 != "HsMR") %>% 
                               filter(model_1 != "HsMR")
-SR_main_alt_disagreement <- filter(SR_alt_disagreements_table, model_2 != "HsMR") %>% 
+sr_main_alt_disagreement <- filter(sr_alt_disagreements_table, model_2 != "HsMR") %>% 
                               filter(model_1 != "HsMR")
 
-HA_main_model_disagreement <- filter(HA_model_disagreements_table, model_2 != "H3") %>% 
+ha_main_model_disagreement <- filter(ha_model_disagreements_table, model_2 != "H3") %>% 
                               filter(model_1 != "H3")
-HA_main_alt_disagreement <- filter(HA_alt_disagreements_table, model_2 != "H3") %>% 
+ha_main_alt_disagreement <- filter(ha_alt_disagreements_table, model_2 != "H3") %>% 
                               filter(model_1 != "H3")
 
-str(SR_alt_disagreements_table)
-str(SR_main_alt_disagreement)
+str(sr_alt_disagreements_table)
+str(sr_main_alt_disagreement)
 
-# SR DBD: ER-SS vs. JTT
-plot.main.comparison(SR_main_model_disagreement, "grey90")
-ggsave(file = paste0(figure.path, "/SR_main_ml_disagreement.svg"))
-plot.alt.comparison(SR_main_alt_disagreement, "white")
-ggsave(file = paste0(figure.path, "/SR_main_alt_disagreement.svg"))
+# sr DBD: ER-SS vs. JTT
+plot.main.comparison(sr_main_model_disagreement, "grey90")
+ggsave(file = paste0(figure.path, "/sr_main_ml_disagreement.svg"))
+plot.alt.comparison(sr_main_alt_disagreement, "white")
+ggsave(file = paste0(figure.path, "/sr_main_alt_disagreement.svg"))
 
-# SARS RBD: SARS-SS vs. WAG
-plot.main.comparison(RBD_model_disagreements_table, "grey90")
-ggsave(file = paste0(figure.path, "/RBD_main_ml_disagreement.svg"))
-plot.alt.comparison(RBD_alt_disagreements_table, "white")
-ggsave(file = paste0(figure.path, "/RBD_main_alt_disagreement.svg"))
+# SARS rbd: SARS-SS vs. WAG
+plot.main.comparison(rbd_model_disagreements_table, "grey90")
+ggsave(file = paste0(figure.path, "/rbd_main_ml_disagreement.svg"))
+plot.alt.comparison(rbd_alt_disagreements_table, "white")
+ggsave(file = paste0(figure.path, "/rbd_main_alt_disagreement.svg"))
 
-# SARS RBD: H1-SS vs. FLU
-plot.main.comparison(HA_main_model_disagreement, "grey90")
-ggsave(file = paste0(figure.path, "/HA_main_ml_disagreement.svg"))
-plot.alt.comparison(HA_main_alt_disagreement, "white")
-ggsave(file = paste0(figure.path, "/HA_main_alt_disagreement.svg"))
+# SARS rbd: H1-SS vs. FLU
+plot.main.comparison(ha_main_model_disagreement, "grey90")
+ggsave(file = paste0(figure.path, "/ha_main_ml_disagreement.svg"))
+plot.alt.comparison(ha_main_alt_disagreement, "white")
+ggsave(file = paste0(figure.path, "/ha_main_alt_disagreement.svg"))
 
 ############################################################
 ##### Disagreements among site-specific models #############
 ############################################################
 
-SR_epistasis_model_disagreement <- filter(SR_model_disagreements_table, model_1 %in% c("C_teleta_SR", "HsMR")) %>%
-                                  filter(model_2 %in% c("C_teleta_SR", "HsMR"))
-SR_epistasis_alt_disagreement <- filter(SR_alt_disagreements_table, model_1 %in% c("C_teleta_SR", "HsMR")) %>%
-                                  filter(model_2 %in% c("C_teleta_SR", "HsMR"))
+sr_epistasis_model_disagreement <- filter(sr_model_disagreements_table, model_1 %in% c("C_teleta_sr", "HsMR")) %>%
+                                  filter(model_2 %in% c("C_teleta_sr", "HsMR"))
+sr_epistasis_alt_disagreement <- filter(sr_alt_disagreements_table, model_1 %in% c("C_teleta_sr", "HsMR")) %>%
+                                  filter(model_2 %in% c("C_teleta_sr", "HsMR"))
 
-HA_epistasis_model_disagreement <- filter(HA_model_disagreements_table, model_1 %in% c("H1", "H3")) %>% 
+ha_epistasis_model_disagreement <- filter(ha_model_disagreements_table, model_1 %in% c("H1", "H3")) %>% 
                                   filter(model_2 %in% c("H1", "H3"))
-HA_epistasis_alt_disagreement <- filter(HA_alt_disagreements_table, model_1 %in% c("H1", "H3")) %>% 
+ha_epistasis_alt_disagreement <- filter(ha_alt_disagreements_table, model_1 %in% c("H1", "H3")) %>% 
                                   filter(model_2 %in% c("H1", "H3"))
 
-# SR DBD: ER-SS vs. kSR-SS
-plot.main.comparison(SR_epistasis_model_disagreement, "grey90")
-ggsave(file = paste0(figure.path, "/SR_epistasis_ml_disagreement.svg"))
-plot.alt.comparison(SR_epistasis_alt_disagreement, "white")
-ggsave(file = paste0(figure.path, "/SR_epistasis_alt_disagreement.svg"))
+# sr DBD: ER-SS vs. ksr-SS
+plot.main.comparison(sr_epistasis_model_disagreement, "grey90")
+ggsave(file = paste0(figure.path, "/sr_epistasis_ml_disagreement.svg"))
+plot.alt.comparison(sr_epistasis_alt_disagreement, "white")
+ggsave(file = paste0(figure.path, "/sr_epistasis_alt_disagreement.svg"))
 
-# SARS RBD: H1-SS vs. H3-SS
-plot.main.comparison(HA_epistasis_model_disagreement, "grey90")
-ggsave(file = paste0(figure.path, "/HA_epistasis_ml_disagreement.svg"))
-plot.alt.comparison(HA_epistasis_alt_disagreement, "white")
-ggsave(file = paste0(figure.path, "/HA_epistasis_alt_disagreement.svg"))
+# SARS rbd: H1-SS vs. H3-SS
+plot.main.comparison(ha_epistasis_model_disagreement, "grey90")
+ggsave(file = paste0(figure.path, "/ha_epistasis_ml_disagreement.svg"))
+plot.alt.comparison(ha_epistasis_alt_disagreement, "white")
+ggsave(file = paste0(figure.path, "/ha_epistasis_alt_disagreement.svg"))
 
 ```
 
@@ -906,19 +953,19 @@ fisher_parsimony <- function(contingency_table){
   return(results)
 }
 
-SR_contingency_tables <- lapply(1:6, function(i) {
-  tables <- get_contingency_table(SR_model_comparison_list[[i]])
+sr_contingency_tables <- lapply(1:6, function(i) {
+  tables <- get_contingency_table(sr_model_comparison_list[[i]])
   return(tables)
 })
 
 
-HA_contingency_tables <- lapply(1:6, function(i) {
-  tables <- get_contingency_table(HA_model_comparison_list[[i]])
+ha_contingency_tables <- lapply(1:6, function(i) {
+  tables <- get_contingency_table(ha_model_comparison_list[[i]])
   return(tables)
 })
 
-RBD_contingency_tables <- lapply(1:3, function(i) {
-  tables <- get_contingency_table(RBD_model_comparison_list[[i]])
+rbd_contingency_tables <- lapply(1:3, function(i) {
+  tables <- get_contingency_table(rbd_model_comparison_list[[i]])
   return(tables)
 })
 
@@ -926,56 +973,56 @@ RBD_contingency_tables <- lapply(1:3, function(i) {
 
 
 
-SR_odds_ratio <- data.frame()
+sr_odds_ratio <- data.frame()
 
-for(i in 1:length(SR_contingency_tables)){
-  model_1 <- unique(SR_contingency_tables[[i]]$model_1)
-  model_2 <- unique(SR_contingency_tables[[i]]$model_2)
-  statistics <- fisher_parsimony(SR_contingency_tables[[i]])
+for(i in 1:length(sr_contingency_tables)){
+  model_1 <- unique(sr_contingency_tables[[i]]$model_1)
+  model_2 <- unique(sr_contingency_tables[[i]]$model_2)
+  statistics <- fisher_parsimony(sr_contingency_tables[[i]])
   data <- c(model_1, model_2, statistics[1], statistics[2])
-  SR_odds_ratio <- rbind(SR_odds_ratio, data)
+  sr_odds_ratio <- rbind(sr_odds_ratio, data)
 }
 
-colnames(SR_odds_ratio) <- c("model_1", "model_2", "odds_ratio", "p.value")
-SR_odds_ratio$model_1 <- factor(SR_odds_ratio$model_1, levels = sr.model.list)
-SR_odds_ratio$model_2 <- factor(SR_odds_ratio$model_2, levels = rev(sr.model.list))
+colnames(sr_odds_ratio) <- c("model_1", "model_2", "odds_ratio", "p.value")
+sr_odds_ratio$model_1 <- factor(sr_odds_ratio$model_1, levels = sr.model.list)
+sr_odds_ratio$model_2 <- factor(sr_odds_ratio$model_2, levels = rev(sr.model.list))
 
 
-HA_odds_ratio <- data.frame()
+ha_odds_ratio <- data.frame()
 
-for(i in 1:length(HA_contingency_tables)){
-  model_1 <- unique(HA_contingency_tables[[i]]$model_1)
-  model_2 <- unique(HA_contingency_tables[[i]]$model_2)
-  statistics <- fisher_parsimony(HA_contingency_tables[[i]])
+for(i in 1:length(ha_contingency_tables)){
+  model_1 <- unique(ha_contingency_tables[[i]]$model_1)
+  model_2 <- unique(ha_contingency_tables[[i]]$model_2)
+  statistics <- fisher_parsimony(ha_contingency_tables[[i]])
   data <- c(model_1, model_2, statistics[1], statistics[2])
-  HA_odds_ratio <- rbind(HA_odds_ratio, data)
+  ha_odds_ratio <- rbind(ha_odds_ratio, data)
 }
 
-colnames(HA_odds_ratio) <- c("model_1", "model_2", "odds_ratio", "p.value")
-HA_odds_ratio$model_1 <- factor(HA_odds_ratio$model_1, levels = ha.model.list)
-HA_odds_ratio$model_2 <- factor(HA_odds_ratio$model_2, levels = rev(ha.model.list))
+colnames(ha_odds_ratio) <- c("model_1", "model_2", "odds_ratio", "p.value")
+ha_odds_ratio$model_1 <- factor(ha_odds_ratio$model_1, levels = ha.model.list)
+ha_odds_ratio$model_2 <- factor(ha_odds_ratio$model_2, levels = rev(ha.model.list))
 
 
-RBD_odds_ratio <- data.frame()
+rbd_odds_ratio <- data.frame()
 
-for(i in 1:length(RBD_contingency_tables)){
-  model_1 <- unique(RBD_contingency_tables[[i]]$model_1)
-  model_2 <- unique(RBD_contingency_tables[[i]]$model_2)
-  statistics <- fisher_parsimony(RBD_contingency_tables[[i]])
+for(i in 1:length(rbd_contingency_tables)){
+  model_1 <- unique(rbd_contingency_tables[[i]]$model_1)
+  model_2 <- unique(rbd_contingency_tables[[i]]$model_2)
+  statistics <- fisher_parsimony(rbd_contingency_tables[[i]])
   data <- c(model_1, model_2, statistics[1], statistics[2])
-  RBD_odds_ratio <- rbind(RBD_odds_ratio, data)
+  rbd_odds_ratio <- rbind(rbd_odds_ratio, data)
 }
 
-colnames(RBD_odds_ratio) <- c("model_1", "model_2", "odds_ratio", "p.value")
-RBD_odds_ratio$model_1 <- factor(RBD_odds_ratio$model_1, levels = rbd.model.list)
-RBD_odds_ratio$model_2 <- factor(RBD_odds_ratio$model_2, levels = rev(rbd.model.list))
+colnames(rbd_odds_ratio) <- c("model_1", "model_2", "odds_ratio", "p.value")
+rbd_odds_ratio$model_1 <- factor(rbd_odds_ratio$model_1, levels = rbd.model.list)
+rbd_odds_ratio$model_2 <- factor(rbd_odds_ratio$model_2, levels = rev(rbd.model.list))
 
 ```
 
 
 ```{r}
 
-SR_contingency_tables[[2]]
+sr_contingency_tables[[2]]
 
 analysis_contingency_tables <- function(table){
 
@@ -1032,14 +1079,14 @@ analysis_contingency_tables <- function(table){
 }
 
 
-analysis_contingency_tables(SR_contingency_tables[[2]])
-analysis_contingency_tables(RBD_contingency_tables[[1]])
-analysis_contingency_tables(HA_contingency_tables[[2]])
+analysis_contingency_tables(sr_contingency_tables[[2]])
+analysis_contingency_tables(rbd_contingency_tables[[1]])
+analysis_contingency_tables(ha_contingency_tables[[2]])
 
 
 # For epistasis data
-analysis_contingency_tables(SR_contingency_tables[[1]])
-analysis_contingency_tables(HA_contingency_tables[[1]])
+analysis_contingency_tables(sr_contingency_tables[[1]])
+analysis_contingency_tables(ha_contingency_tables[[1]])
 
 
 ```
@@ -1092,19 +1139,19 @@ plot.odds.ratio <- function(table){
 ##### Disagreements with best SH model #####################
 ############################################################
 
-SR_main_odds <- extract.odds(SR_contingency_tables[[2]]) # ER-SS v. JTT
-SR_main_odds <- mutate(SR_main_odds, system = "SR DBD")
+sr_main_odds <- extract.odds(sr_contingency_tables[[2]]) # ER-SS v. JTT
+sr_main_odds <- mutate(sr_main_odds, system = "sr DBD")
 
 
-RBD_main_odds <- extract.odds(RBD_contingency_tables[[1]]) # SARS-SS v. WAG
-RBD_main_odds <- mutate(RBD_main_odds, system = "SARS RBD")
+rbd_main_odds <- extract.odds(rbd_contingency_tables[[1]]) # SARS-SS v. WAG
+rbd_main_odds <- mutate(rbd_main_odds, system = "SARS rbd")
 
-HA_main_odds <- extract.odds(HA_contingency_tables[[2]]) # H1-SS v. FLU
-HA_main_odds <- mutate(HA_main_odds, system = "HA")
+ha_main_odds <- extract.odds(ha_contingency_tables[[2]]) # H1-SS v. FLU
+ha_main_odds <- mutate(ha_main_odds, system = "ha")
 
 
-All_main_odds <- rbind(SR_main_odds, RBD_main_odds, HA_main_odds)
-All_main_odds$system <- factor(All_main_odds$system, levels = c("SR DBD", "SARS RBD", "HA"))
+All_main_odds <- rbind(sr_main_odds, rbd_main_odds, ha_main_odds)
+All_main_odds$system <- factor(All_main_odds$system, levels = c("sr DBD", "SARS rbd", "ha"))
 
 plot.odds.ratio(All_main_odds) +
     ylim(0,95) +
@@ -1163,28 +1210,28 @@ identity_per_node <- function(model_comparison_table){
 # respectively
 
 
-SR_node_identity_binned <- data.frame()
+sr_node_identity_binned <- data.frame()
 for(i in 1:3){
-  identity_binned <- identity_per_node(SR_model_comparison_list[[i]])
+  identity_binned <- identity_per_node(sr_model_comparison_list[[i]])
   identity_binned <- mutate(identity_binned, model = sr.model.list[i+1])
-  SR_node_identity_binned <- rbind(SR_node_identity_binned, identity_binned)
+  sr_node_identity_binned <- rbind(sr_node_identity_binned, identity_binned)
   
 }
 
 
-HA_node_identity_binned <- data.frame()
+ha_node_identity_binned <- data.frame()
 for(i in 1:3){
-  identity_binned <- identity_per_node(HA_model_comparison_list[[i]])
+  identity_binned <- identity_per_node(ha_model_comparison_list[[i]])
   identity_binned <- mutate(identity_binned, model = ha.model.list[i+1])
-  HA_node_identity_binned <- rbind(HA_node_identity_binned, identity_binned)
+  ha_node_identity_binned <- rbind(ha_node_identity_binned, identity_binned)
   
 }
 
-RBD_node_identity_binned <- data.frame()
+rbd_node_identity_binned <- data.frame()
 for(i in 1:2){
-  identity_binned <- identity_per_node(RBD_model_comparison_list[[i]])
+  identity_binned <- identity_per_node(rbd_model_comparison_list[[i]])
   identity_binned <- mutate(identity_binned, model = rbd.model.list[i+1])
-  RBD_node_identity_binned <- rbind(RBD_node_identity_binned, identity_binned)
+  rbd_node_identity_binned <- rbind(rbd_node_identity_binned, identity_binned)
 }
 
 ```
@@ -1326,58 +1373,58 @@ calc_harmonic_blens <- function(tree_with_data, num_tips){
 }
 
 
-# Load SR topologies
-SR_tree_labels <- read.newick(paste0(sr.path, "/C_teleta_SR/labeled_cladogram.txt"))
-SR_topologies <- lapply(c(paste0(sr.path, "/C_teleta_SR/phylogram.txt"),
-                          paste0(sr.path, "/Protostome_SR/phylogram.txt"),
+# Load sr topologies
+sr_tree_labels <- read.newick(paste0(sr.path, "/C_teleta_sr/labeled_cladogram.txt"))
+sr_topologies <- lapply(c(paste0(sr.path, "/C_teleta_sr/phylogram.txt"),
+                          paste0(sr.path, "/Protostome_sr/phylogram.txt"),
                           paste0(sr.path, "/HsMR/phylogram.txt"),
                           paste0(sr.path, "/JTT/phylogram.txt"),
                           paste0(sr.path, "/Poisson/phylogram.txt")), 
                           read.newick)
 
-# Load HA topologies
-HA_tree_labels <- read.newick(paste0(ha.path, "/H1/labeled_cladogram.txt"))
-HA_topologies <- lapply(c(paste0(ha.path, "/H1/phylogram.txt"),
+# Load ha topologies
+ha_tree_labels <- read.newick(paste0(ha.path, "/H1/labeled_cladogram.txt"))
+ha_topologies <- lapply(c(paste0(ha.path, "/H1/phylogram.txt"),
                           paste0(ha.path, "/H3/phylogram.txt"),
                           paste0(ha.path, "/FLU/phylogram.txt"),
                           paste0(ha.path, "/Poisson/phylogram.txt")),
                           read.newick)
 
-# Load RBD topologies
-RBD_tree_labels <- read.newick(paste0(rbd.path, "/SARS_CoV_2/labeled_cladogram.txt"))
-RBD_topologies <- lapply(c(paste0(rbd.path, "/SARS_CoV_2/phylogram.txt"),
+# Load rbd topologies
+rbd_tree_labels <- read.newick(paste0(rbd.path, "/SARS_CoV_2/labeled_cladogram.txt"))
+rbd_topologies <- lapply(c(paste0(rbd.path, "/SARS_CoV_2/phylogram.txt"),
                            paste0(rbd.path, "/WAG/phylogram.txt"),
                            paste0(rbd.path, "/Poisson/phylogram.txt")),
                            read.newick)
 
 
-SR_topology_tables <- lapply(SR_topologies, label_ancestral_nodes, SR_tree_labels)
-names(SR_topology_tables) <- sr.model.list[1:length(SR_topology_tables)]
+sr_topology_tables <- lapply(sr_topologies, label_ancestral_nodes, sr_tree_labels)
+names(sr_topology_tables) <- sr.model.list[1:length(sr_topology_tables)]
 
-HA_topology_tables <- lapply(HA_topologies, label_ancestral_nodes, HA_tree_labels)
-names(HA_topology_tables) <- ha.model.list[1:length(HA_topology_tables)]
+ha_topology_tables <- lapply(ha_topologies, label_ancestral_nodes, ha_tree_labels)
+names(ha_topology_tables) <- ha.model.list[1:length(ha_topology_tables)]
 
-RBD_topology_tables <- lapply(RBD_topologies, label_ancestral_nodes, RBD_tree_labels)
-names(RBD_topology_tables) <- rbd.model.list[1:length(RBD_topology_tables)]
+rbd_topology_tables <- lapply(rbd_topologies, label_ancestral_nodes, rbd_tree_labels)
+names(rbd_topology_tables) <- rbd.model.list[1:length(rbd_topology_tables)]
 
 
-SR_topology_tables_with_data <- lapply(2:4, function(i) {
-  tree_with_data <- add_data_to_tree(SR_node_identity_binned, sr.model.list[i], sr.alignment.size, SR_topology_tables[[i]], sr.tips)
+sr_topology_tables_with_data <- lapply(2:4, function(i) {
+  tree_with_data <- add_data_to_tree(sr_node_identity_binned, sr.model.list[i], sr.alignment.size, sr_topology_tables[[i]], sr.tips)
   return(tree_with_data)
 })
-names(SR_topology_tables_with_data) <- sr.model.list[2:4]
+names(sr_topology_tables_with_data) <- sr.model.list[2:4]
 
-HA_topology_tables_with_data <- lapply(2:4, function(i) {
-  tree_with_data <- add_data_to_tree(HA_node_identity_binned, ha.model.list[i], ha.alignment.size, HA_topology_tables[[i]], ha.tips)
+ha_topology_tables_with_data <- lapply(2:4, function(i) {
+  tree_with_data <- add_data_to_tree(ha_node_identity_binned, ha.model.list[i], ha.alignment.size, ha_topology_tables[[i]], ha.tips)
   return(tree_with_data)
 })
-names(HA_topology_tables_with_data) <- ha.model.list[2:4]
+names(ha_topology_tables_with_data) <- ha.model.list[2:4]
 
-RBD_topology_tables_with_data <- lapply(2:3, function(i) {
-  tree_with_data <- add_data_to_tree(RBD_node_identity_binned, rbd.model.list[i], rbd.alignment.size, RBD_topology_tables[[i]], rbd.tips)
+rbd_topology_tables_with_data <- lapply(2:3, function(i) {
+  tree_with_data <- add_data_to_tree(rbd_node_identity_binned, rbd.model.list[i], rbd.alignment.size, rbd_topology_tables[[i]], rbd.tips)
   return(tree_with_data)
 })
-names(RBD_topology_tables_with_data) <- rbd.model.list[2:3]
+names(rbd_topology_tables_with_data) <- rbd.model.list[2:3]
 
 
 
@@ -1387,29 +1434,29 @@ names(RBD_topology_tables_with_data) <- rbd.model.list[2:3]
 
 
 
-SR_harmonic_blens <- data.frame()
+sr_harmonic_blens <- data.frame()
 
-for(i in 1:length(SR_topology_tables_with_data)){
-  harmonic_df <- calc_harmonic_blens(SR_topology_tables_with_data[[i]], sr.tips)
-  harmonic_df <- mutate(harmonic_df, model = names(SR_topology_tables_with_data)[i])
-  SR_harmonic_blens <- rbind(SR_harmonic_blens, harmonic_df)
+for(i in 1:length(sr_topology_tables_with_data)){
+  harmonic_df <- calc_harmonic_blens(sr_topology_tables_with_data[[i]], sr.tips)
+  harmonic_df <- mutate(harmonic_df, model = names(sr_topology_tables_with_data)[i])
+  sr_harmonic_blens <- rbind(sr_harmonic_blens, harmonic_df)
 }
 
 
-HA_harmonic_blens <- data.frame()
+ha_harmonic_blens <- data.frame()
 
-for(i in 1:length(HA_topology_tables_with_data)){
-  harmonic_df <- calc_harmonic_blens(HA_topology_tables_with_data[[i]], ha.tips)
-  harmonic_df <- mutate(harmonic_df, model = names(HA_topology_tables_with_data)[i])
-  HA_harmonic_blens <- rbind(HA_harmonic_blens, harmonic_df)
+for(i in 1:length(ha_topology_tables_with_data)){
+  harmonic_df <- calc_harmonic_blens(ha_topology_tables_with_data[[i]], ha.tips)
+  harmonic_df <- mutate(harmonic_df, model = names(ha_topology_tables_with_data)[i])
+  ha_harmonic_blens <- rbind(ha_harmonic_blens, harmonic_df)
 }
 
-RBD_harmonic_blens <- data.frame()
+rbd_harmonic_blens <- data.frame()
 
-for(i in 1:length(RBD_topology_tables_with_data)){
-  harmonic_df <- calc_harmonic_blens(RBD_topology_tables_with_data[[i]], rbd.tips)
-  harmonic_df <- mutate(harmonic_df, model = names(RBD_topology_tables_with_data)[i])
-  RBD_harmonic_blens <- rbind(RBD_harmonic_blens, harmonic_df)
+for(i in 1:length(rbd_topology_tables_with_data)){
+  harmonic_df <- calc_harmonic_blens(rbd_topology_tables_with_data[[i]], rbd.tips)
+  harmonic_df <- mutate(harmonic_df, model = names(rbd_topology_tables_with_data)[i])
+  rbd_harmonic_blens <- rbind(rbd_harmonic_blens, harmonic_df)
 }
 
 
@@ -1439,9 +1486,9 @@ calculate.correlation <- function(table, model){
   print(cor.test(filtered_table$harmonic_mean, filtered_table$number_disagreements, method = "spearman"))
 }
 
-SR_harmonic_blens$model <- factor(SR_harmonic_blens$model, levels = sr.model.list)
-HA_harmonic_blens$model <- factor(HA_harmonic_blens$model, levels = ha.model.list)
-RBD_harmonic_blens$model <- factor(RBD_harmonic_blens$model, levels = rbd.model.list)
+sr_harmonic_blens$model <- factor(sr_harmonic_blens$model, levels = sr.model.list)
+ha_harmonic_blens$model <- factor(ha_harmonic_blens$model, levels = ha.model.list)
+rbd_harmonic_blens$model <- factor(rbd_harmonic_blens$model, levels = rbd.model.list)
 
 
 ############################################################
@@ -1449,18 +1496,18 @@ RBD_harmonic_blens$model <- factor(RBD_harmonic_blens$model, levels = rbd.model.
 ############################################################
 
 
-plot.harmonic.mean(filter(SR_harmonic_blens, model == "JTT"), "#D81B60", 2)
-calculate.correlation(SR_harmonic_blens, "JTT")
-calculate.correlation(filter(SR_harmonic_blens, label != 75), "JTT") # Without outlier in node 75
-ggsave(file = paste0(figure.path, "/SR_main_harmonic.svg"))
+plot.harmonic.mean(filter(sr_harmonic_blens, model == "JTT"), "#D81B60", 2)
+calculate.correlation(sr_harmonic_blens, "JTT")
+calculate.correlation(filter(sr_harmonic_blens, label != 75), "JTT") # Without outlier in node 75
+ggsave(file = paste0(figure.path, "/sr_main_harmonic.svg"))
 
-plot.harmonic.mean(filter(RBD_harmonic_blens, model == "WAG"), "#D81B60", 2)
-calculate.correlation(RBD_harmonic_blens, "WAG")
-ggsave(file = paste0(figure.path, "/RBD_main_harmonic.svg"))
+plot.harmonic.mean(filter(rbd_harmonic_blens, model == "WAG"), "#D81B60", 2)
+calculate.correlation(rbd_harmonic_blens, "WAG")
+ggsave(file = paste0(figure.path, "/rbd_main_harmonic.svg"))
 
-plot.harmonic.mean(filter(HA_harmonic_blens, model == "FLU"), "#D81B60", 2)
-calculate.correlation(HA_harmonic_blens, "FLU")
-ggsave(file = paste0(figure.path, "/HA_main_harmonic.svg"))
+plot.harmonic.mean(filter(ha_harmonic_blens, model == "FLU"), "#D81B60", 2)
+calculate.correlation(ha_harmonic_blens, "FLU")
+ggsave(file = paste0(figure.path, "/ha_main_harmonic.svg"))
 
 ```
 
@@ -1534,15 +1581,15 @@ get_ks_test <- function(data){
 }
 
 
-SR_nodes_with_dis <- unique(filter(SR_node_identity_binned, number_disagreements > 0)$node)
-count(filter(SR_model_comparison_list[[2]], node %in% SR_nodes_with_dis), true_mismatch == "identical")
+sr_nodes_with_dis <- unique(filter(sr_node_identity_binned, number_disagreements > 0)$node)
+count(filter(sr_model_comparison_list[[2]], node %in% sr_nodes_with_dis), true_mismatch == "identical")
 
-RBD_nodes_with_dis <- unique(filter(RBD_node_identity_binned, number_disagreements > 0)$node)
-count(filter(RBD_model_comparison_list[[1]], node %in% RBD_nodes_with_dis), true_mismatch == "identical")
+rbd_nodes_with_dis <- unique(filter(rbd_node_identity_binned, number_disagreements > 0)$node)
+count(filter(rbd_model_comparison_list[[1]], node %in% rbd_nodes_with_dis), true_mismatch == "identical")
 
 
-HA_nodes_with_dis <- unique(filter(HA_node_identity_binned, number_disagreements > 0)$node)
-count(filter(HA_model_comparison_list[[2]], node %in% HA_nodes_with_dis), true_mismatch == "identical")
+ha_nodes_with_dis <- unique(filter(ha_node_identity_binned, number_disagreements > 0)$node)
+count(filter(ha_model_comparison_list[[2]], node %in% ha_nodes_with_dis), true_mismatch == "identical")
 
 
 filter.node.data <- function(table, list_disagreements){
@@ -1557,17 +1604,17 @@ filter.node.data <- function(table, list_disagreements){
 ##### Disagreements with best SH model #####################
 ############################################################
 
-SR_main_node_data <- filter.node.data(SR_model_comparison_list[[2]], SR_nodes_with_dis) %>% mutate(system = "SR DBD")
-RBD_main_node_data <- filter.node.data(RBD_model_comparison_list[[1]], RBD_nodes_with_dis) %>% mutate(system = "SARS RBD")
-HA_main_node_data <- filter.node.data(HA_model_comparison_list[[2]], HA_nodes_with_dis) %>% mutate(system = "HA")
+sr_main_node_data <- filter.node.data(sr_model_comparison_list[[2]], sr_nodes_with_dis) %>% mutate(system = "sr DBD")
+rbd_main_node_data <- filter.node.data(rbd_model_comparison_list[[1]], rbd_nodes_with_dis) %>% mutate(system = "SARS rbd")
+ha_main_node_data <- filter.node.data(ha_model_comparison_list[[2]], ha_nodes_with_dis) %>% mutate(system = "ha")
 
 
-All_main_node_data <- rbind(SR_main_node_data, RBD_main_node_data, HA_main_node_data)
-All_main_node_data$system <- factor(All_main_node_data$system, levels = c("SR DBD", "SARS RBD", "HA"))
+All_main_node_data <- rbind(sr_main_node_data, rbd_main_node_data, ha_main_node_data)
+All_main_node_data$system <- factor(All_main_node_data$system, levels = c("sr DBD", "SARS rbd", "ha"))
 
-get_ks_test(SR_model_comparison_list[[2]])
-get_ks_test(RBD_model_comparison_list[[1]])
-get_ks_test(HA_model_comparison_list[[2]])
+get_ks_test(sr_model_comparison_list[[2]])
+get_ks_test(rbd_model_comparison_list[[1]])
+get_ks_test(ha_model_comparison_list[[2]])
 
 
 All_main_node_data %>%
@@ -1609,15 +1656,15 @@ All_main_node_data %>%
 ############################################################
 
 
-SR_epistasis_node_data <- filter.node.data(SR_model_comparison_list[[1]], SR_nodes_with_dis) %>% mutate(system = "SR DBD")
-HA_epistasis_node_data <- filter.node.data(HA_model_comparison_list[[1]], HA_nodes_with_dis) %>% mutate(system = "HA")
+sr_epistasis_node_data <- filter.node.data(sr_model_comparison_list[[1]], sr_nodes_with_dis) %>% mutate(system = "sr DBD")
+ha_epistasis_node_data <- filter.node.data(ha_model_comparison_list[[1]], ha_nodes_with_dis) %>% mutate(system = "ha")
 
 
-All_epistasis_node_data <- rbind(SR_epistasis_node_data, HA_epistasis_node_data)
-All_epistasis_node_data$system <- factor(All_epistasis_node_data$system, levels = c("SR DBD", "HA"))
+All_epistasis_node_data <- rbind(sr_epistasis_node_data, ha_epistasis_node_data)
+All_epistasis_node_data$system <- factor(All_epistasis_node_data$system, levels = c("sr DBD", "ha"))
 
-get_ks_test(SR_model_comparison_list[[1]])
-get_ks_test(HA_model_comparison_list[[1]])
+get_ks_test(sr_model_comparison_list[[1]])
+get_ks_test(ha_model_comparison_list[[1]])
 
 
 plot.rates.boxplot(All_epistasis_node_data) +
@@ -1677,13 +1724,13 @@ get_ks_test <- function(data){
 
 
 
-get_ks_test(SR_model_comparison_list[[2]])
-get_ks_test(RBD_model_comparison_list[[1]])
-get_ks_test(HA_model_comparison_list[[2]])
+get_ks_test(sr_model_comparison_list[[2]])
+get_ks_test(rbd_model_comparison_list[[1]])
+get_ks_test(ha_model_comparison_list[[2]])
 
 
-get_ks_test(SR_model_comparison_list[[1]])
-get_ks_test(HA_model_comparison_list[[1]])
+get_ks_test(sr_model_comparison_list[[1]])
+get_ks_test(ha_model_comparison_list[[1]])
 
 
 ```
@@ -1764,16 +1811,16 @@ summarise_parsimony_data <- function(model_comparison_list, parsimony_data){
 
 
 
-SR_Poisson_parsimony <- summarise_parsimony_data(SR_model_comparison_list[[2]], SR_parsimony)
-SR_JTT_parsimony <- summarise_parsimony_data(SR_model_comparison_list[[3]], SR_parsimony)
-SR_HsMR_parsimony <- summarise_parsimony_data(SR_model_comparison_list[[4]], SR_parsimony)
+sr_Poisson_parsimony <- summarise_parsimony_data(sr_model_comparison_list[[2]], sr_parsimony)
+sr_JTT_parsimony <- summarise_parsimony_data(sr_model_comparison_list[[3]], sr_parsimony)
+sr_HsMR_parsimony <- summarise_parsimony_data(sr_model_comparison_list[[4]], sr_parsimony)
 
-HA_Poisson_parsimony <- summarise_parsimony_data(HA_model_comparison_list[[2]], HA_parsimony)
-HA_FLU_parsimony <- summarise_parsimony_data(HA_model_comparison_list[[3]], HA_parsimony)
-HA_H3_parsimony <- summarise_parsimony_data(HA_model_comparison_list[[4]], HA_parsimony)
+ha_Poisson_parsimony <- summarise_parsimony_data(ha_model_comparison_list[[2]], ha_parsimony)
+ha_FLU_parsimony <- summarise_parsimony_data(ha_model_comparison_list[[3]], ha_parsimony)
+ha_H3_parsimony <- summarise_parsimony_data(ha_model_comparison_list[[4]], ha_parsimony)
 
-RBD_Poisson_parsimony <- summarise_parsimony_data(RBD_model_comparison_list[[2]], RBD_parsimony)
-RBD_WAG_parsimony <- summarise_parsimony_data(RBD_model_comparison_list[[3]], RBD_parsimony)
+rbd_Poisson_parsimony <- summarise_parsimony_data(rbd_model_comparison_list[[2]], rbd_parsimony)
+rbd_WAG_parsimony <- summarise_parsimony_data(rbd_model_comparison_list[[3]], rbd_parsimony)
 
 ```
 
@@ -1824,7 +1871,7 @@ clean.preference.data <- function(main_data, sec_data) {
 aa_order <- c("A","R","N","D","C","Q","E","G","H","I",
               "L","K","M","F","P","S","T","W","Y","V")
 
-er.data <- read.csv(paste0(sr.path,"/C_teleta_SR/AAPI.txt"), sep = " ", header = FALSE)
+er.data <- read.csv(paste0(sr.path,"/C_teleta_sr/AAPI.txt"), sep = " ", header = FALSE)
 mr.data <- read.csv(paste0(sr.path,"/HsMR/AAPI.txt"), sep = " ", header = FALSE)
 h1.data <- read.csv(paste0(ha.path,"/H1/AAPI.txt"), sep = " ", header = FALSE)
 h3.data <- read.csv(paste0(ha.path,"/H3/AAPI.txt"), sep = " ", header = FALSE)
@@ -1897,15 +1944,15 @@ ggsave(file = paste0(epistasis.figure.path, "/ha.preference.overlap.svg"))
 ############################################################
 
 
-SR_epistasis_odds <- extract.odds(SR_contingency_tables[[1]]) # ER-SS v. kSR-SS
-SR_epistasis_odds <- mutate(SR_epistasis_odds, system = "SR DBD")
+sr_epistasis_odds <- extract.odds(sr_contingency_tables[[1]]) # ER-SS v. ksr-SS
+sr_epistasis_odds <- mutate(sr_epistasis_odds, system = "sr DBD")
 
-HA_epistasis_odds <- extract.odds(HA_contingency_tables[[1]]) # H1-SS v. H3-SS
-HA_epistasis_odds <- mutate(HA_epistasis_odds, system = "HA")
+ha_epistasis_odds <- extract.odds(ha_contingency_tables[[1]]) # H1-SS v. H3-SS
+ha_epistasis_odds <- mutate(ha_epistasis_odds, system = "ha")
 
 
-All_epistasis_odds <- rbind(SR_epistasis_odds, HA_epistasis_odds)
-All_epistasis_odds$system <- factor(All_epistasis_odds$system, levels = c("SR DBD", "HA"))
+All_epistasis_odds <- rbind(sr_epistasis_odds, ha_epistasis_odds)
+All_epistasis_odds$system <- factor(All_epistasis_odds$system, levels = c("sr DBD", "ha"))
 
 plot.odds.ratio(All_epistasis_odds) +
     ylim(0,50) +
@@ -1932,13 +1979,13 @@ ggsave(file = paste0(epistasis.figure.path, "/odds.ratios.svg"))
 ############################################################
 
 
-plot.harmonic.mean(filter(SR_harmonic_blens, model == "HsMR"), "#004D40", 6)
-calculate.correlation(SR_harmonic_blens, "HsMR")
-calculate.correlation(filter(SR_harmonic_blens, label != 75), "HsMR") # Without outlier in node 75
+plot.harmonic.mean(filter(sr_harmonic_blens, model == "HsMR"), "#004D40", 6)
+calculate.correlation(sr_harmonic_blens, "HsMR")
+calculate.correlation(filter(sr_harmonic_blens, label != 75), "HsMR") # Without outlier in node 75
 ggsave(file = paste0(epistasis.figure.path, "/sr.harmonic.blens.svg"))
 
-plot.harmonic.mean(filter(HA_harmonic_blens, model == "H3"), "#004D40", 6)
-calculate.correlation(HA_harmonic_blens, "H1")
+plot.harmonic.mean(filter(ha_harmonic_blens, model == "H3"), "#004D40", 6)
+calculate.correlation(ha_harmonic_blens, "H1")
 ggsave(file = paste0(epistasis.figure.path, "/ha.harmonic.blens.svg"))
 
 ```
@@ -1980,8 +2027,8 @@ match_aa_states <- function(sequence, phenotypic_effects) {
 
 system_sequences <- read.fasta(file.path(here(), "data/alignments/all_systems_reference_seq.fasta"))
 
-sr_dms <- read.csv(file.path(here(), "data/dms_datasets/PHI_C_teleta_SR.csv"), header = TRUE)
-rbd_dms <- read.csv(file.path(here(), "data/dms_datasets/PHI_RBD_gapless.csv"), header = TRUE)
+sr_dms <- read.csv(file.path(here(), "data/dms_datasets/PHI_C_teleta_sr.csv"), header = TRUE)
+rbd_dms <- read.csv(file.path(here(), "data/dms_datasets/PHI_rbd_gapless.csv"), header = TRUE)
 ha_dms <- read.csv(file.path(here(), "data/dms_datasets/PHI_H1.csv"), header = TRUE)
 
 
@@ -2013,14 +2060,14 @@ ggplot(sr_dfe, aes(x = p_effects)) +
   geom_density()
 
 
-sr_disagreements <- SR_model_comparison_list[[2]]
+sr_disagreements <- sr_model_comparison_list[[2]]
 sr_disagreements <- filter(sr_disagreements, true_mismatch == "disagreement")
 
 
-rbd_disagreements <- RBD_model_comparison_list[[1]]
+rbd_disagreements <- rbd_model_comparison_list[[1]]
 rbd_disagreements <- filter(rbd_disagreements, true_mismatch == "disagreement")
 
-ha_disagreements <- HA_model_comparison_list[[2]]
+ha_disagreements <- ha_model_comparison_list[[2]]
 ha_disagreements <- filter(ha_disagreements, true_mismatch == "disagreement")
 
 
@@ -2107,18 +2154,18 @@ extract_logLik <- function(model_list, model_path, param_vector) {
   return(Likelihood_tables)
 }
 
-SR_num_param <- c(rep(12, 11), 20, 1)
-HA_num_param <- c(12, 12, 20, 1)
-RBD_num_param <- c(12, 20, 1)
+sr_num_param <- c(rep(12, 11), 20, 1)
+ha_num_param <- c(12, 12, 20, 1)
+rbd_num_param <- c(12, 20, 1)
 
-SR_logLik <- extract_logLik(sr.model.list, sr.path, SR_num_param)
-HA_logLik <- extract_logLik(model.list, ha.path, HA_num_param)
-RBD_logLik <- extract_logLik(rbd.model.list, rbd.path, RBD_num_param)
+sr_logLik <- extract_logLik(sr.model.list, sr.path, sr_num_param)
+ha_logLik <- extract_logLik(model.list, ha.path, ha_num_param)
+rbd_logLik <- extract_logLik(rbd.model.list, rbd.path, rbd_num_param)
 
 
-knitr::kable(arrange(SR_logLik[[1]], delta_aic), caption = "Steroid receptor")
-knitr::kable(arrange(HA_logLik[[1]], delta_aic), caption = "Hemagglutinin")
-knitr::kable(arrange(RBD_logLik[[1]], delta_aic), caption = "SARS-CoV RBD")
+knitr::kable(arrange(sr_logLik[[1]], delta_aic), caption = "Steroid receptor")
+knitr::kable(arrange(ha_logLik[[1]], delta_aic), caption = "Hemagglutinin")
+knitr::kable(arrange(rbd_logLik[[1]], delta_aic), caption = "SARS-CoV rbd")
 
 
 
@@ -2150,36 +2197,36 @@ plot_delta_logLik <- function(delta_logLik_table){
 }
 
 
-SR_delta_logLik_plot <- plot_delta_logLik(SR_logLik[2]) +
+sr_delta_logLik_plot <- plot_delta_logLik(sr_logLik[2]) +
   scale_fill_manual(values = c(rep("#7b3294", times = 8), #ER background
-            rep("#008b80", times = 4), #kSR background
+            rep("#008b80", times = 4), #ksr background
             "#d55e00")) + #Poisson model
   labs(caption = paste0("BEST ln-Lik =", 
-                        as.character(round(SR_logLik[[1]][1,2], digits = 2))))
+                        as.character(round(sr_logLik[[1]][1,2], digits = 2))))
 
-HA_delta_logLik_plot <- plot_delta_logLik(HA_logLik[2]) +
+ha_delta_logLik_plot <- plot_delta_logLik(ha_logLik[2]) +
   scale_fill_manual(values = c("#7b3294", #H1 background
             "#008b80", #H3 background
             "#d55e00")) + #Poisson model
   labs(caption = paste0("BEST ln-Lik =", 
-                        as.character(round(HA_logLik[[1]][1,2], digits = 2))))
+                        as.character(round(ha_logLik[[1]][1,2], digits = 2))))
 
 
-RBD_delta_logLik_plot <- plot_delta_logLik(RBD_logLik[2]) +
+rbd_delta_logLik_plot <- plot_delta_logLik(rbd_logLik[2]) +
   scale_fill_manual(values = c("#7b3294",
             "#d55e00")) + #Poisson model
   labs(caption = paste0("BEST ln-Lik =", 
-                        as.character(round(RBD_logLik[[1]][1,2], digits = 2))))
+                        as.character(round(rbd_logLik[[1]][1,2], digits = 2))))
 
-SR_delta_logLik_plot
-HA_delta_logLik_plot
-RBD_delta_logLik_plot
-
-
+sr_delta_logLik_plot
+ha_delta_logLik_plot
+rbd_delta_logLik_plot
 
 
-#ggsave(file = paste0(figure.path, "/SR_delta_logLik_plot.svg"), 
-#       plot = SR_delta_logLik_plot, width = 17, height = 12, 
+
+
+#ggsave(file = paste0(figure.path, "/sr_delta_logLik_plot.svg"), 
+#       plot = sr_delta_logLik_plot, width = 17, height = 12, 
 #       units = "cm", dpi = 300)
 
 ```
