@@ -179,86 +179,7 @@ compare_ml_states <- function(model_1, model_2, alignment_size, gaps) {
   return(site_comparison)
 }
 
-
-
-
-# A function to summarize the number and percentage of disagreements in a comparison table
-# Takes a data table as input
-summarise_model_comparison <- function(compare_table){
-  # Group the table by the true_mismatch column and count the number of occurrences of each value
-  summary_table <- compare_table[, .(count = .N), by = true_mismatch][,
-    # Calculate the percentage of occurrences for each true_mismatch value 
-    percentage := count/nrow(compare_table)*100][]
-  # Return the summary table
-  return(summary_table)
-}
-
-
-
-
-
-
-summarise_disagreements <- function(compared_models_table, alignment_size) {
-  # For number and proportion of identical and disagreeing states
-  disagreement_value_state <- summarise_model_comparison(compared_models_table)
-  identical_states <- disagreement_value_state[true_mismatch == "identical", .(count)]$count
-  identical_states_percent <- disagreement_value_state[true_mismatch == "identical", .(percentage)]$percentage
-  disagreement_states <- ifelse("disagreement" %in% disagreement_value_state$true_mismatch,
-                                disagreement_value_state[true_mismatch == "disagreement", .(count)]$count,
-                                0)
-  disagreement_states_percent <- ifelse("disagreement" %in% disagreement_value_state$true_mismatch,
-                                         disagreement_value_state[true_mismatch == "disagreement", .(percentage)]$percentage,
-                                         0)
-  
-  # For proportion of nodes with disagreements
-  total_nodes <- nrow(compared_models_table) / alignment_size
-  disagreement_value_node <- nrow(compared_models_table[true_mismatch == "disagreement", .N, by = node])
-  disagreement_nodes <- disagreement_value_node
-  disagreement_nodes_percent <- (disagreement_value_node / total_nodes) * 100
-
-  summary_disagreements <- data.frame(model_1 = colnames(compared_models_table)[3],
-                                      model_2 = colnames(compared_models_table)[4],
-                                      identical_states, disagreement_states,
-                                      identical_states_percent, disagreement_states_percent,
-                                      total_nodes, disagreement_nodes, disagreement_nodes_percent)
-
-  return(summary_disagreements)
-}
-
-
-
-
-sr.model.list <- c("SS-ER", "SS-MR", "JTT", "Poisson") 
-ha.model.list <- c("H1", "H3", "FLU", "Poisson") 
-rbd.model.list <- c("SARS_CoV_2", "WAG", "Poisson") 
-
-
-## SR DBD with only 3 DMS datasets
-
-# Generate all pairwise combinations and self-comparison of models
-model_pairs <- combn(sr.results, 2)
-self_comparisons <- t(matrix(sr.results, nrow = length(sr.results), ncol = 2))
-#model_pairs <- cbind(model_pairs, self_comparisons)
-
-
-
-
-sr.results <- list.files(path = results.path, pattern = "sr",
-                         recursive = FALSE, full.names = FALSE, include.dirs = TRUE)
-
-rbd.results <- list.files(path = results.path, pattern = "rbd",
-                         recursive = FALSE, full.names = FALSE, include.dirs = TRUE)
-
-ha.results <- list.files(path = results.path, pattern = "ha",
-                         recursive = FALSE, full.names = FALSE, include.dirs = TRUE)
-
-# Loop over each pairwise combination and compare models
-SR_model_comparison_list <- lapply(seq_len(ncol(model_pairs)), function(i) {
-  compare_ml_states(model_pairs[1, i], model_pairs[2, i], sr.alignment.size, SR_gaps)
-})
-
-
-function(dt_list){
+summary_reconstruction_identity <- function(dt_list, model_pairs, model_names){
 
   model_comparison <- data.table(true_mismatch = character(), 
                            count = integer(), 
@@ -267,9 +188,9 @@ function(dt_list){
                            model_b = character(),
                            stringsAsFactors = FALSE)
   
-  for(i in 1:length(SR_model_comparison_list)){
+  for(i in 1:length(dt_list)){
   
-  site_comparison <- SR_model_comparison_list[[i]]
+  site_comparison <- dt_list[[i]]
   site_comparison <- site_comparison[, .(count = .N), by = true_mismatch][,
     # Calculate the percentage of occurrences for each true_mismatch value 
     percentage := count/nrow(site_comparison)*100][]
@@ -281,15 +202,81 @@ function(dt_list){
   site_comparison[, model_b := model_b]
   
   model_comparison <- rbind(model_comparison, site_comparison)
+  
   }
   
-  self_comparisons
+  self_comparisons <- data.table(true_mismatch = "identical", 
+                           count = nrow(dt_list[[1]]), 
+                           percentage = 100,
+                           model_a = model_names,
+                           model_b = model_names,
+                           stringsAsFactors = FALSE)
   
+  model_comparison <- rbind(model_comparison, self_comparisons)
   
+  return(model_comparison)
 }
 
 
-ggplot(model_comparison[true_mismatch == "identical"], aes(x = model_a, y = model_b)) +
+
+# 
+
+sr.model.list <- c("er", "mr", "jtt", "poisson") 
+
+sr.results.path <- list.files(path = results.path, pattern = "sr",
+                         recursive = FALSE, full.names = FALSE, include.dirs = TRUE)
+sr.results.path <- sr.results.path[order(c(3,4,1,2))]
+sr.model.pairs <- combn(sr.results.path, 2)
+
+
+rbd.model.list <- c("sars", "wag", "poisson") 
+rbd.results.path <- list.files(path = results.path, pattern = "rbd",
+                         recursive = FALSE, full.names = FALSE, include.dirs = TRUE)
+rbd.results.path <- rbd.results.path[order(c(3,2,1))]
+rbd.model.pairs <- combn(rbd.results.path, 2)
+
+ha.model.list <- c("h1", "h3", "flu", "poisson") 
+ha.results.path <- list.files(path = results.path, pattern = "ha",
+                         recursive = FALSE, full.names = FALSE, include.dirs = TRUE)
+ha.results.path <- ha.results.path[order(c(3,4,1,2))]
+ha.model.pairs <- combn(ha.results.path, 2)
+
+
+# Loop over each pairwise combination and compare models
+SR_model_comparison_list <- lapply(seq_len(ncol(sr.model.pairs)), function(i) {
+  compare_ml_states(sr.model.pairs[1, i], sr.model.pairs[2, i], sr.alignment.size, SR_gaps)
+})
+
+sr.identity.summary <- summary_reconstruction_identity(SR_model_comparison_list, sr.model.pairs, sr.model.list)
+
+sr.identity.summary$model_a <- factor(sr.identity.summary$model_a, levels = sr.model.list)
+sr.identity.summary$model_b <- factor(sr.identity.summary$model_b, levels = rev(sr.model.list))
+
+
+rbd_model_comparison_list <- lapply(seq_len(ncol(rbd.model.pairs)), function(i) {
+  compare_ml_states(rbd.model.pairs[1, i], rbd.model.pairs[2, i], rbd.alignment.size, RBD_gaps)
+})
+
+rbd.identity.summary <- summary_reconstruction_identity(rbd_model_comparison_list, rbd.model.pairs, rbd.model.list)
+
+rbd.identity.summary$model_a <- factor(rbd.identity.summary$model_a, levels = rbd.model.list)
+rbd.identity.summary$model_b <- factor(rbd.identity.summary$model_b, levels = rev(rbd.model.list))
+
+
+ha_model_comparison_list <- lapply(seq_len(ncol(ha.model.pairs)), function(i) {
+  compare_ml_states(ha.model.pairs[1, i], ha.model.pairs[2, i], ha.alignment.size, HA_gaps)
+})
+
+ha.identity.summary <- summary_reconstruction_identity(rbd_model_comparison_list, ha.model.pairs, ha.model.list)
+
+ha.identity.summary$model_a <- factor(ha.identity.summary$model_a, levels = ha.model.list)
+ha.identity.summary$model_b <- factor(ha.identity.summary$model_b, levels = rev(ha.model.list))
+
+
+
+
+
+ggplot(ha.identity.summary[true_mismatch == "identical"], aes(x = model_a, y = model_b)) +
   geom_tile(color = "black", fill = "white") +
   geom_text(aes(label = round(percentage, digits = 1)), size = 8) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
@@ -314,79 +301,6 @@ plot.main.comparison <- function(table, color_choice){
 }
 
 
-
-
-
-
-
-
-# Summarise identical and disagreeing states into a data frame
-SR_model_disagreements_table <- data.frame()
-
-for(i in 1:length(SR_model_comparison_list)){
-  model_disagreement_data <- summarise_disagreements(SR_model_comparison_list[[i]], 
-                          sr.alignment.size)
-    SR_model_disagreements_table <- rbind(SR_model_disagreements_table, 
-                                        model_disagreement_data)
-}
-
-# Organize models by their AIC value
-SR_model_disagreements_table$model_1 <- factor(SR_model_disagreements_table$model_1, levels = sr.model.list)
-SR_model_disagreements_table$model_2 <- factor(SR_model_disagreements_table$model_2, levels = rev(sr.model.list))
-
-# SARS-CoV-2 RBD
-# Generate all pairwise combinations and self-comparison of models
-model_pairs <- combn(rbd.model.list, 2)
-self_comparisons <- t(matrix(rbd.model.list, nrow = length(rbd.model.list), ncol = 2))
-model_pairs <- cbind(model_pairs, self_comparisons)
-
-
-# Loop over each pairwise combination and compare models
-RBD_model_comparison_list <- lapply(seq_len(ncol(model_pairs)), function(i) {
-  compare_ml_states(model_pairs[1, i], model_pairs[2, i], rbd.alignment.size, rbd.path, RBD_gaps)
-})
-
-# Summarise identical and disagreeing states into a data frame
-RBD_model_disagreements_table <- data.frame()
-
-for(i in 1:length(RBD_model_comparison_list)){
-  model_disagreement_data <- summarise_disagreements(RBD_model_comparison_list[[i]], 
-                          rbd.alignment.size)
-    RBD_model_disagreements_table <- rbind(RBD_model_disagreements_table, 
-                                        model_disagreement_data)
-}
-
-# Organize models by their AIC value
-RBD_model_disagreements_table$model_1 <- factor(RBD_model_disagreements_table$model_1, levels = rbd.model.list)
-RBD_model_disagreements_table$model_2 <- factor(RBD_model_disagreements_table$model_2, levels = rev(rbd.model.list))
-
-
-# Hemagglutinin
-
-# Generate all pairwise combinations and self-comparison of models
-model_pairs <- combn(ha.model.list, 2)
-self_comparisons <- t(matrix(ha.model.list, nrow = length(ha.model.list), ncol = 2))
-model_pairs <- cbind(model_pairs, self_comparisons)
-
-
-# Loop over each pairwise combination and compare models
-HA_model_comparison_list <- lapply(seq_len(ncol(model_pairs)), function(i) {
-  compare_ml_states(model_pairs[1, i], model_pairs[2, i], ha.alignment.size, ha.path, HA_gaps)
-})
-
-# Summarise identical and disagreeing states into a data frame
-HA_model_disagreements_table <- data.frame()
-
-for(i in 1:length(HA_model_comparison_list)){
-  model_disagreement_data <- summarise_disagreements(HA_model_comparison_list[[i]], 
-                          ha.alignment.size)
-    HA_model_disagreements_table <- rbind(HA_model_disagreements_table, 
-                                        model_disagreement_data)
-}
-
-# Organize models by their AIC value
-HA_model_disagreements_table$model_1 <- factor(HA_model_disagreements_table$model_1, levels = ha.model.list)
-HA_model_disagreements_table$model_2 <- factor(HA_model_disagreements_table$model_2, levels = rev(ha.model.list))
 
 ```
 
