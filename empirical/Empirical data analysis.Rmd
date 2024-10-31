@@ -340,83 +340,128 @@ plot.pairwise.ML(ha.identity.summary)
 
 ```{r obtain AllAlt reconstructions of all models}
 
-table <- fread("C:/Users/rmuniztrejo/Documents/git_repos/site-specific-asr/empirical/results/ha_sh_flu/ASR/2_PP.txt")
-max_val <- max(table[1,])
-    
-    # find the index of the maximum value in the row
-    # there could be sites with two max values, only pick the first one [1]
-    max_index <- colnames(table)[which(table[1,] == max_val)[1]] 
-?colnames
-max(table[1,])
-?fread
+# To determine if a site
+# a threshold of posterior probability that will determine if there is ambiguity
+# in assigning a single state
 
-# define function to obtain the AltAll sequences under different ambiguity criteria
-get_alt_all_seq <- function(pp_table, threshold, condition) {
+
+altall.seq <- function(pp_table, threshold, condition) {
   
-  # read in the posterior probability table
-  table <- read.csv(pp_table)
+  # Read in the posterior probability table
+  table <- fread(pp_table)
   
-  # create an empty vector to store results
+  # Create an empty vector to store results
   results <- c()
   
-  # loop over each row of the table
+  # Loop over each row (i. e. site) of the table
   for (i in 1:nrow(table)) {
     
-    # find the maximum value in the row
+    # Find the maximum value in the row
     max_val <- max(table[i,])
     
-    # find the index of the maximum value in the row
-    # there could be sites with two max values, only pick the first one [1]
+    # Find the index of the maximum value in the row
+    # Although unusual, there could be sites with two max values, if so
+    # only pick the first one [1]
     max_index <- which(table[i,] == max_val)[1] 
     
-    # find the second highest value in the row
+    # Find the second highest value in the row
     sorted_row <- sort(table[i,], decreasing=TRUE)
-    second_max_val <- sorted_row[2]
+    second_max_val <- as.numeric(sorted_row[1,2])
     
-    # calculate the ratio of the highest to second highest value
+    # Calculate the ratio of the highest to second highest value
     ratio <- max_val/second_max_val
     
-    # select the condition to use
+    # Perform analysis based on the selected ambiguity criteria and posterior
+    # probability threshold
+    
     if (condition == "high_second") {
-      # if the second highest value is greater than or equal to the threshold
+      # If the second highest value is greater than or equal to the threshold
       if (second_max_val > threshold) {
-        # add the amino acid with the second highest value to the results vector
-        result <- colnames(sorted_row[2])
+        # Add the amino acid with the second highest value to the results vector
+        result <- colnames(sorted_row[1,2])
         results <- c(results, result)
         
       } else {
-        # add the amino acid with the highest value if the condition is not met
+        # Add the amino acid with the highest value if the condition is not met
         results <- c(results, colnames(table)[max_index])
       }
       
     } else if (condition == "ratio") {
-      # if the ratio of the highest to second highest value is less than the threshold
+      # If the ratio between the highest and second highest value is less than 
+      # the threshold
       if (ratio < threshold) {
-        # add the amino acid with the second highest value to the results vector
-        results <- c(results, colnames(sorted_row[2]))
+        # Add the amino acid with the second highest value to the results vector
+        results <- c(results, colnames(sorted_row[1,2]))
         
       } else {
-        # add the amino acid with the highest value if the condition is not met
+        # Add the amino acid with the highest value if the condition is not met
         results <- c(results, colnames(table)[max_index])
       }
       
     } else {
-      # if the highest value is less than the threshold
+      # If the highest value is less than the threshold
       if (max_val < threshold) {
-        # add the amino acid with the second highest value to the results vector
-        results <- c(results, colnames(sorted_row[2]))
+        # Add the amino acid with the second highest value to the results vector
+        results <- c(results, colnames(sorted_row[1,2]))
         
       } else {
-        # add the amino acid with the highest value to the results vector
+        # Add the amino acid with the highest value to the results vector
         results <- c(results, colnames(table)[max_index])
       }
     }
   }
   
-  # return the results vector as a single protein sequence
-  return(paste0(results, collapse=""))
+  # Return the results vector as a single protein sequence
+  return(results)
 }
 
+
+get.all.altall <- function(system.results.path, alignment.size, condition, threshold){
+  
+  # Create a site vector from 1 to the alignment size
+  site <- 1:alignment.size
+  
+  pp_file_list <- list.files(path = file.path(results.path, system.results.path, "ASR"), pattern = "[0-9]{1,3}_PP.txt")
+  
+  alt.states.dt <- data.table(node = integer(),
+                          site = integer(),
+                          alt_seq = character())
+
+  for (i in seq_along(pp_file_list)) {
+    
+    # Get node number from filename
+    node_number <- rep(parse_number(pp_file_list[i]), 
+                       times = alignment.size)  
+    
+    model_2_sequence_alt <- altall.seq(file.path(results.path, system.results.path, "ASR", pp_file_list[[i]]), threshold, condition)
+    
+    if(length(model_2_sequence_alt) == alignment.size){} else {print("error")}
+
+    # Bind the node, site, model 1, model 2, and mismatch columns to the output data table
+    alt.states.dt <- rbind(alt.states.dt, data.table(node = node_number,
+                                         site = site, 
+                                         alt_seq = model_2_sequence_alt))
+  }
+  
+  # Change name to identify from which model are we collecting the alt states
+  model_name <- sub(".*_", "", system.results.path[1]) 
+  setnames(alt.states.dt, c("node", "site", paste0("alt_", model_name)))
+  
+  return(alt.states.dt)
+}
+
+
+sr.altall.seqs.list <- parallel::mclapply(seq_along(sr.results.path), function(i) {
+  get.all.altall(sr.results.path[i], sr.alignment.size, "high_second", 0.2)
+})
+
+rbd.altall.seqs.list <- parallel::mclapply(seq_along(rbd.results.path), function(i) {
+  get.all.altall(rbd.results.path[i], rbd.alignment.size, "high_second", 0.2)
+})
+
+ha.altall.seqs.list <- parallel::mclapply(seq_along(ha.results.path), function(i) {
+  get.all.altall(ha.results.path[i], ha.alignment.size, "high_second", 0.2)
+})
 
 
 ```
@@ -433,165 +478,6 @@ get_mismatch <- function(seq1, seq2) {
 
 
 
-
-compare_alt_states <- function(model_1, model_2, alignment_size, model_path, gap_vector) {
-  
-  # Create a site vector from 1 to the alignment size
-  site <- 1:alignment_size
-  
-  # Get list of node files for reconstruction
-  node_file_list <- list.files(path = file.path(model_path, model_1, "ASR"), pattern = "[0-9]{1,3}\\.txt")
-  pp_file_list <- list.files(path = file.path(model_path, model_1, "ASR"), pattern = "[0-9]{1,3}_PP.txt")
-  
-  # Pre-allocate output data table with columns for node, site, model 1, model 2,
-  # mismatch, and true_mismatch
-  PP_tibble <- data.table(node = integer(), 
-                          site = integer(), 
-                          model_1_ml = character(),
-                          model_2_ml = character(),
-                          model_2_alt = character(),
-                          mismatch = character(),
-                          ml_amb = character(),
-                          stringsAsFactors = FALSE)
-  
-  # Loop over nodes to reconstruct sequences and compare
-  for (i in seq_along(node_file_list)) {
-    
-    # Get node number from filename
-    node_number <- rep(parse_number(node_file_list[i]), 
-                       times = alignment_size)  
-    
-    # Load sequences for both models
-    model_1_sequence_ml <- readLines(file.path(model_path, model_1, "ASR", node_file_list[[i]]))
-    model_2_sequence_ml <- readLines(file.path(model_path, model_2, "ASR", node_file_list[[i]]))
-    model_2_sequence_alt <- get_alt_all_seq(file.path(model_path, model_2, "ASR", pp_file_list[[i]]), 0.2, "high_second")
-    
-    # Compare sequences and record results
-    mismatch_ml <- get_mismatch(model_1_sequence_ml, model_2_sequence_ml)
-    mismatch_alt <- get_mismatch(model_1_sequence_ml, model_2_sequence_alt)
-    mismatch_plausible <- ifelse(mismatch_ml == FALSE & mismatch_alt == FALSE, "disagreement", "identical")
-    
-    # Determine ambiguity
-    get_ambiguity <- get_mismatch(model_2_sequence_ml, model_2_sequence_alt)
-    ml_ambiguity <- ifelse(get_ambiguity == TRUE, "unambiguous", "ambiguous")
-
-    # Bind the node, site, model 1, model 2, and mismatch columns to the output data table
-    PP_tibble <- rbind(PP_tibble, data.table(node = node_number,
-                                         site = site, 
-                                         model_1_ml = strsplit(model_1_sequence_ml, split = "")[[1]],
-                                         model_2_ml = strsplit(model_2_sequence_ml, split = "")[[1]],
-                                         model_2_alt = strsplit(model_2_sequence_alt, split = "")[[1]],
-                                         mismatch = mismatch_plausible,
-                                         ml_amb = ml_ambiguity))
-  }
-  
-  # Add the gaps vector as a column to the output data table
-  gaps <- gap_vector
-  PP_tibble <- cbind(PP_tibble, gaps)
-  
-  # Set the "true_mismatch" column to "identical" where gaps are detected,
-  # otherwise it reflects the comparison result from the "mismatch" column
-  PP_tibble[, true_mismatch := ifelse(gaps == "gap", "identical", mismatch)]
-  
-  
-  # Set the "true_ml_amb" column to "unambiguous" where gaps are detected,
-  # otherwise it reflects the comparison result from the "ml_amb" column
-  
-  PP_tibble[, true_ml_amb := ifelse(gaps == "gap", "unambiguous", ml_amb)]
-  
-  # Modify column names
-  setnames(PP_tibble, c("node", "site", "model_1_ml", "model_2_ml", "model_2_alt", "mismatch", "ml_amb", "gaps", "true_mismatch", "true_ml_amb"), 
-           c("node", "site", model_1, model_2, paste0(model_2, "_alt"), "mismatch", "ml_amb", "gap", "true_mismatch", "true_ml_amb"))
-  
-  # Convert true_mismatch to a factor with levels "identical" and "disagreement"
-  PP_tibble$true_mismatch <- factor(PP_tibble$true_mismatch, levels = c("identical", "disagreement"))
-  
-  # Return the output data table
-  return(PP_tibble)
-}
-
-## sr DBD with only 3 DMS datasets
-
-# Generate all pairwise combinations and self-comparison of models
-model_pairs <- combn(sr.model.list, 2)
-model_pairs_swapped <- apply(model_pairs, 2, rev)
-model_pairs <- cbind(model_pairs, model_pairs_swapped)
-
-# Loop over each pairwise combination and compare models
-sr_alt_comparison_list <- lapply(seq_len(ncol(model_pairs)), function(i) {
-  compare_alt_states(model_pairs[1, i], model_pairs[2, i], sr.alignment.size, sr.path, sr.gaps)
-})
-
-# Summarise identical and disagreeing states into a data frame
-sr_alt_disagreements_table <- data.frame()
-
-for(i in 1:length(sr_alt_comparison_list)){
-  model_disagreement_data <- summarise_disagreements(sr_alt_comparison_list[[i]], 
-                          sr.alignment.size)
-    sr_alt_disagreements_table <- rbind(sr_alt_disagreements_table, 
-                                        model_disagreement_data)
-}
-
-
-# Organize models by their AIC value
-sr_alt_disagreements_table$model_1 <- factor(sr_alt_disagreements_table$model_1, levels = rev(sr.model.list))
-sr_alt_disagreements_table$model_2 <- factor(sr_alt_disagreements_table$model_2, levels = sr.model.list)
-
-
-## Hemagglutinin
-
-# Generate all pairwise combinations and self-comparison of models
-model_pairs <- combn(ha.model.list, 2)
-model_pairs_swapped <- apply(model_pairs, 2, rev)
-model_pairs <- cbind(model_pairs, model_pairs_swapped)
-
-# Loop over each pairwise combination and compare models
-ha_alt_comparison_list <- lapply(seq_len(ncol(model_pairs)), function(i) {
-  compare_alt_states(model_pairs[1, i], model_pairs[2, i], ha.alignment.size, ha.path, ha.gaps)
-})
-
-# Summarise identical and disagreeing states into a data frame
-ha_alt_disagreements_table <- data.frame()
-
-for(i in 1:length(ha_alt_comparison_list)){
-  model_disagreement_data <- summarise_disagreements(ha_alt_comparison_list[[i]], 
-                          ha.alignment.size)
-    ha_alt_disagreements_table <- rbind(ha_alt_disagreements_table, 
-                                        model_disagreement_data)
-}
-
-# Organize models by their AIC v
-ha_alt_disagreements_table$model_1 <- factor(ha_alt_disagreements_table$model_1, levels = rev(ha.model.list))
-ha_alt_disagreements_table$model_2 <- factor(ha_alt_disagreements_table$model_2, levels = ha.model.list)
-
-
-
-
-## Spike rbd 
-
-# Generate all pairwise combinations and self-comparison of models
-model_pairs <- combn(rbd.model.list, 2)
-model_pairs_swapped <- apply(model_pairs, 2, rev)
-model_pairs <- cbind(model_pairs, model_pairs_swapped)
-
-# Loop over each pairwise combination and compare models
-rbd_alt_comparison_list <- lapply(seq_len(ncol(model_pairs)), function(i) {
-  compare_alt_states(model_pairs[1, i], model_pairs[2, i], rbd.alignment.size, rbd.path, rbd.gaps)
-})
-
-# Summarise identical and disagreeing states into a data frame
-rbd_alt_disagreements_table <- data.frame()
-
-for(i in 1:length(rbd_alt_comparison_list)){
-  model_disagreement_data <- summarise_disagreements(rbd_alt_comparison_list[[i]], 
-                          rbd.alignment.size)
-    rbd_alt_disagreements_table <- rbind(rbd_alt_disagreements_table, 
-                                        model_disagreement_data)
-}
-
-# Organize models by their AIC value
-rbd_alt_disagreements_table$model_1 <- factor(rbd_alt_disagreements_table$model_1, levels = rev(rbd.model.list))
-rbd_alt_disagreements_table$model_2 <- factor(rbd_alt_disagreements_table$model_2, levels = rbd.model.list)
 
 
 ```
