@@ -451,15 +451,15 @@ get.all.altall <- function(system.results.path, alignment.size, condition, thres
 }
 
 
-sr.altall.seqs.list <- parallel::mclapply(seq_along(sr.results.path), function(i) {
+sr.altall.seqs.list <- parallel::mclapply(2:length(sr.results.path), function(i) {
   get.all.altall(sr.results.path[i], sr.alignment.size, "high_second", 0.2)
 })
 
-rbd.altall.seqs.list <- parallel::mclapply(seq_along(rbd.results.path), function(i) {
+rbd.altall.seqs.list <- parallel::mclapply(2:length(rbd.results.path), function(i) {
   get.all.altall(rbd.results.path[i], rbd.alignment.size, "high_second", 0.2)
 })
 
-ha.altall.seqs.list <- parallel::mclapply(seq_along(ha.results.path), function(i) {
+ha.altall.seqs.list <- parallel::mclapply(2:length(ha.results.path), function(i) {
   get.all.altall(ha.results.path[i], ha.alignment.size, "high_second", 0.2)
 })
 
@@ -470,13 +470,13 @@ ha.altall.seqs.list <- parallel::mclapply(seq_along(ha.results.path), function(i
 
 
 ```{r plausible set comparison}
-# Define function to get the matches between two reconstructed sequences
-get_mismatch <- function(seq1, seq2) {
-  matches <- charToRaw(seq1) == charToRaw(seq2)
-  return(matches)
-}
 
 
+
+abc <- merge(ha_model_comparison_list[[1]], ha.altall.seqs.list[[2]], by = c("node", "site"))
+
+abc[, alt_mismatch := ifelse(h1 == h3 | h1 == alt_h3, "identical", "disagreement")]
+abc[, true_alt_mismatch := ifelse(gap == "gap", "identical", alt_mismatch)]
 
 
 
@@ -613,36 +613,6 @@ for(i in seq_along(rbd_model_comparison_list)) {
 ```
 
 
-
-
-
-
-```{r save alt all data}
-
-misc_path <- file.path(here(), "results/empirical/misc/")
-
-# Among-site compositional heterogeineity Alt All reconstructions
-write.csv(sr_alt_comparison_list[[2]], file = file.path(misc_path, "sr_among_site_alt_data.csv"), row.names = FALSE)
-write.csv(rbd_alt_comparison_list[[1]], file = file.path(misc_path, "rbd_among_site_alt_data.csv"), row.names = FALSE)
-write.csv(ha_alt_comparison_list[[2]], file = file.path(misc_path, "ha_among_site_alt_data.csv"), row.names = FALSE)
-
-# Among-lineage compositional heterogeineity Alt All reconstructions
-write.csv(sr_alt_comparison_list[[1]], file = file.path(misc_path, "sr_among_lineage_alt_data.csv"), row.names = FALSE)
-write.csv(ha_alt_comparison_list[[1]], file = file.path(misc_path, "ha_among_lineage_alt_data.csv"), row.names = FALSE)
-
-```
-
-```{r read alt all data}
-
-sr.among.site.alt.data <- as.data.table(read.csv(file.path(misc_path, "sr_among_site_alt_data.csv")))
-rbd.among.site.alt.data <- as.data.table(read.csv(file.path(misc_path, "rbd_among_site_alt_data.csv")))
-ha.among.site.alt.data <- as.data.table(read.csv(file.path(misc_path, "ha_among_site_alt_data.csv")))
-
-sr.among.lineage.alt.data <- as.data.table(read.csv(file.path(misc_path, "sr_among_lineage_alt_data.csv")))
-ha.among.lineage.alt.data <- as.data.table(read.csv(file.path(misc_path, "ha_among_lineage_alt_data.csv")))
-
-
-```
 
 
 
@@ -1879,137 +1849,6 @@ ggsave(file = paste0(epistasis.figure.path, "/ha.harmonic.blens.svg"))
 
 ## Supplementary material
 
-```{r calculate phenotypic effects}
-
-library(phylotools)
-library(data.table)
-library(moments)
-library(dplyr)
-library(here)
-library(ggplot2)
-
-supp.figure.path <- file.path(here(), "figures/supplementary/")
-
-
-# define function to associate a protein sequence to their preference values
-match_aa_states <- function(sequence, phenotypic_effects) {
-  # split the protein sequence into individual amino acids
-  amino_acids <- strsplit(sequence, "")[[1]]
-  
-  # initialize a vector to store the matched effects
-  matched_effects <- vector(length = length(amino_acids))
-  
-  # match the amino acids to their corresponding phenotypic effects in the table
-  for (i in seq_along(amino_acids)) {
-    aa <- amino_acids[i]
-    col <- match(aa, names(phenotypic_effects))
-    row <- i
-    matched_effects[i] <- phenotypic_effects[row, col]
-  }
-  
-  # return the vector of matched effects
-  return(matched_effects)
-}
-
-system_sequences <- read.fasta(file.path(here(), "data/alignments/all_systems_reference_seq.fasta"))
-
-sr_dms <- read.csv(file.path(here(), "data/dms_datasets/PHI_C_teleta_sr.csv"), header = TRUE)
-rbd_dms <- read.csv(file.path(here(), "data/dms_datasets/PHI_rbd_gapless.csv"), header = TRUE)
-ha_dms <- read.csv(file.path(here(), "data/dms_datasets/PHI_H1.csv"), header = TRUE)
-
-
-sr_phenotype <- match_aa_states(system_sequences$seq.text[1], sr_dms)
-rbd_phenotype <- match_aa_states(system_sequences$seq.text[3], rbd_dms)
-ha_phenotype <- match_aa_states(system_sequences$seq.text[4], ha_dms)
-
-get_dfe <- function(dataset, sequence){
-  pheno_effects <- c()
-  
-  for(i in 1:length(sequence)){
-    effects <- as.numeric(dataset[i,] - sequence[i])
-    pheno_effects <- c(pheno_effects, effects)
-  }
-  
-  pheno_effects <- pheno_effects[pheno_effects!=0]
-  
-  df <- data.frame(p_effects = pheno_effects)
-  return(df)
-  
-}
-
-sr_dfe <- get_dfe(sr_dms, sr_phenotype)
-rbd_dfe <- get_dfe(rbd_dms, rbd_phenotype)
-ha_dfe <- get_dfe(ha_dms, ha_phenotype)
-
-
-ggplot(sr_dfe, aes(x = p_effects)) +
-  geom_density()
-
-
-sr_disagreements <- sr_model_comparison_list[[2]]
-sr_disagreements <- filter(sr_disagreements, true_mismatch == "disagreement")
-
-
-rbd_disagreements <- rbd_model_comparison_list[[1]]
-rbd_disagreements <- filter(rbd_disagreements, true_mismatch == "disagreement")
-
-ha_disagreements <- ha_model_comparison_list[[2]]
-ha_disagreements <- filter(ha_disagreements, true_mismatch == "disagreement")
-
-
-get_difference_phenotypic_effects <- function(disagreements, dataset) {
-  pheno_effects <- c()
-  for(i in 1:nrow(disagreements)) {
-    
-    row <- as.numeric(disagreements[i,2])
-    ss_state <- as.character(disagreements[i, 3])
-    sh_state <- as.character(disagreements[i, 4])
-  
-    col <- match(ss_state, names(dataset))
-    ss_effect <- dataset[row, col]
-
-    col <- match(sh_state, names(dataset))
-    sh_effect <- dataset[row, col]
-  
-    effect <- sh_effect - ss_effect
-    pheno_effects <- c(pheno_effects, effect)
-
-  }
-
-  df <- data.frame(p_effects = pheno_effects)
-  return(df)
-}
-
-sr_diff_effects <- get_difference_phenotypic_effects(sr_disagreements, sr_dms)
-rbd_diff_effects <- get_difference_phenotypic_effects(rbd_disagreements, rbd_dms)
-ha_diff_effects <- get_difference_phenotypic_effects(ha_disagreements, ha_dms)
-
-plot_dfe <- function(dms_dfe, recons_dfe){
-  plot <- ggplot(dms_dfe, aes(x = p_effects)) +
-  geom_density(fill = "lightblue", alpha = 0.5) +
-  geom_density(data = recons_dfe, aes(x = p_effects), fill = "pink", alpha = 0.5) +
-  geom_vline(xintercept = 0, linetype = "dashed") +
-  geom_hline(yintercept = 0, color = "grey50") +
-  labs(x = "Difference in functional effects",
-       y = "Density")
-
-  return(plot)
-}
-
-plot_dfe(sr_dfe, sr_diff_effects)
-ggsave(file = paste0(supp.figure.path, "/dfe.sr.svg"))
-
-plot_dfe(rbd_dfe, rbd_diff_effects)
-ggsave(file = paste0(supp.figure.path, "/dfe.rbd.svg"))
-
-plot_dfe(ha_dfe, ha_diff_effects)
-ggsave(file = paste0(supp.figure.path, "/dfe.ha.svg"))
-
-
-
-
-
-```
 
 
 ```{r Likelihood data processing, echo=FALSE}
@@ -2053,67 +1892,6 @@ knitr::kable(arrange(sr_logLik[[1]], delta_aic), caption = "Steroid receptor")
 knitr::kable(arrange(ha_logLik[[1]], delta_aic), caption = "Hemagglutinin")
 knitr::kable(arrange(rbd_logLik[[1]], delta_aic), caption = "SARS-CoV rbd")
 
-
-
 ```
 
-```{r Likelihood plots, echo=FALSE}
-
-plot_delta_logLik <- function(delta_logLik_table){
-
-  delta_logLik_table <- as.data.frame(delta_logLik_table)
-  
-  ggplot(delta_logLik_table, aes(x = delta_model, 
-                               y = delta_logLik, 
-                               fill = delta_model)) +
-  geom_col(color = "black") +
-  geom_text(aes(label = round(delta_logLik, 
-                              digits = 2)), 
-            position = position_dodge(width = 0.9), 
-            vjust = -0.25) +
-  #scale_fill_manual(values = delta_colors) +
-  geom_hline(yintercept = 0) +
-  labs(x = "Model",
-       y =  expression(paste(Delta, " ln-Lik (experimental - BEST)")) ,
-       fill = "Model") +
-  theme(legend.position = "none",
-        axis.text.x = element_text(angle= 25, 
-                                   vjust = 1, 
-                                   hjust = 1))
-}
-
-
-sr_delta_logLik_plot <- plot_delta_logLik(sr_logLik[2]) +
-  scale_fill_manual(values = c(rep("#7b3294", times = 8), #ER background
-            rep("#008b80", times = 4), #ksr background
-            "#d55e00")) + #Poisson model
-  labs(caption = paste0("BEST ln-Lik =", 
-                        as.character(round(sr_logLik[[1]][1,2], digits = 2))))
-
-ha_delta_logLik_plot <- plot_delta_logLik(ha_logLik[2]) +
-  scale_fill_manual(values = c("#7b3294", #H1 background
-            "#008b80", #H3 background
-            "#d55e00")) + #Poisson model
-  labs(caption = paste0("BEST ln-Lik =", 
-                        as.character(round(ha_logLik[[1]][1,2], digits = 2))))
-
-
-rbd_delta_logLik_plot <- plot_delta_logLik(rbd_logLik[2]) +
-  scale_fill_manual(values = c("#7b3294",
-            "#d55e00")) + #Poisson model
-  labs(caption = paste0("BEST ln-Lik =", 
-                        as.character(round(rbd_logLik[[1]][1,2], digits = 2))))
-
-sr_delta_logLik_plot
-ha_delta_logLik_plot
-rbd_delta_logLik_plot
-
-
-
-
-#ggsave(file = paste0(figure.path, "/sr_delta_logLik_plot.svg"), 
-#       plot = sr_delta_logLik_plot, width = 17, height = 12, 
-#       units = "cm", dpi = 300)
-
-```
 
