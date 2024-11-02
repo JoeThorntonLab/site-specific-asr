@@ -228,15 +228,15 @@ ha.model.pairs <- combn(ha.results.path, 2)
 # Apply compare.ml.states() to the pairs of models to obtain lists with each
 # pairwise comparison
 
-sr_model_comparison_list <- lapply(seq_len(ncol(sr.model.pairs)), function(i) {
+sr.model.comparison.list <- lapply(seq_len(ncol(sr.model.pairs)), function(i) {
   compare.ml.states(sr.model.pairs[1, i], sr.model.pairs[2, i], sr.alignment.size, sr.gaps)
 })
 
-rbd_model_comparison_list <- lapply(seq_len(ncol(rbd.model.pairs)), function(i) {
+rbd.model.comparison.list <- lapply(seq_len(ncol(rbd.model.pairs)), function(i) {
   compare.ml.states(rbd.model.pairs[1, i], rbd.model.pairs[2, i], rbd.alignment.size, rbd.gaps)
 })
 
-ha_model_comparison_list <- lapply(seq_len(ncol(ha.model.pairs)), function(i) {
+ha.model.comparison.list <- lapply(seq_len(ncol(ha.model.pairs)), function(i) {
   compare.ml.states(ha.model.pairs[1, i], ha.model.pairs[2, i], ha.alignment.size, ha.gaps)
 })
 
@@ -299,15 +299,15 @@ summary.reconstruction.identity <- function(dt_list, model_pairs, model_names){
 
 # Apply summary.reconstruction.identity() to summarize the data of each protein 
 # family and organize in factors to plot an organized matrix later
-sr.identity.summary <- summary.reconstruction.identity(sr_model_comparison_list, sr.model.pairs, sr.model.list)
+sr.identity.summary <- summary.reconstruction.identity(sr.model.comparison.list, sr.model.pairs, sr.model.list)
 sr.identity.summary$model_a <- factor(sr.identity.summary$model_a, levels = sr.model.list)
 sr.identity.summary$model_b <- factor(sr.identity.summary$model_b, levels = rev(sr.model.list))
 
-rbd.identity.summary <- summary.reconstruction.identity(rbd_model_comparison_list, rbd.model.pairs, rbd.model.list)
+rbd.identity.summary <- summary.reconstruction.identity(rbd.model.comparison.list, rbd.model.pairs, rbd.model.list)
 rbd.identity.summary$model_a <- factor(rbd.identity.summary$model_a, levels = rbd.model.list)
 rbd.identity.summary$model_b <- factor(rbd.identity.summary$model_b, levels = rev(rbd.model.list))
 
-ha.identity.summary <- summary.reconstruction.identity(ha_model_comparison_list, ha.model.pairs, ha.model.list)
+ha.identity.summary <- summary.reconstruction.identity(ha.model.comparison.list, ha.model.pairs, ha.model.list)
 ha.identity.summary$model_a <- factor(ha.identity.summary$model_a, levels = ha.model.list)
 ha.identity.summary$model_b <- factor(ha.identity.summary$model_b, levels = rev(ha.model.list))
 
@@ -365,8 +365,10 @@ altall.seq <- function(pp_table, threshold, condition) {
     max_index <- which(table[i,] == max_val)[1] 
     
     # Find the second highest value in the row
-    sorted_row <- sort(table[i,], decreasing=TRUE)
-    second_max_val <- as.numeric(sorted_row[1,2])
+    sorted_row <- sort(as.vector(as.matrix(table[i, ])), decreasing = TRUE)
+    second_max_val <- sorted_row[2]
+    second_index <- which(table[i,] == second_max_val)[1] 
+    
     
     # Calculate the ratio of the highest to second highest value
     ratio <- max_val/second_max_val
@@ -378,8 +380,7 @@ altall.seq <- function(pp_table, threshold, condition) {
       # If the second highest value is greater than or equal to the threshold
       if (second_max_val > threshold) {
         # Add the amino acid with the second highest value to the results vector
-        result <- colnames(sorted_row[1,2])
-        results <- c(results, result)
+        results <- c(results, colnames(table)[second_index])
         
       } else {
         # Add the amino acid with the highest value if the condition is not met
@@ -391,7 +392,7 @@ altall.seq <- function(pp_table, threshold, condition) {
       # the threshold
       if (ratio < threshold) {
         # Add the amino acid with the second highest value to the results vector
-        results <- c(results, colnames(sorted_row[1,2]))
+        results <- c(results, colnames(table)[second_index])
         
       } else {
         # Add the amino acid with the highest value if the condition is not met
@@ -402,7 +403,7 @@ altall.seq <- function(pp_table, threshold, condition) {
       # If the highest value is less than the threshold
       if (max_val < threshold) {
         # Add the amino acid with the second highest value to the results vector
-        results <- c(results, colnames(sorted_row[1,2]))
+        results <- c(results, colnames(table)[second_index])
         
       } else {
         # Add the amino acid with the highest value to the results vector
@@ -450,6 +451,9 @@ get.all.altall <- function(system.results.path, alignment.size, condition, thres
   return(alt.states.dt)
 }
 
+# Generating each AltAll sequence for all possible nodes can be computationally
+# intensive and takes a long time for a single node. I implemented 
+# parallel::mclapply() to parallelize the process for each model.
 
 sr.altall.seqs.list <- parallel::mclapply(2:length(sr.results.path), function(i) {
   get.all.altall(sr.results.path[i], sr.alignment.size, "high_second", 0.2)
@@ -469,19 +473,113 @@ ha.altall.seqs.list <- parallel::mclapply(2:length(ha.results.path), function(i)
 
 
 
-```{r plausible set comparison}
+```{r merge data tables with plausible set}
+
+pattern <- c(1,2,3,2,3,3)
+
+sr.model.comparison.list <- mapply(function(x, y) 
+  merge(x, sr.altall.seqs.list[[y]], by = c("node", "site")),
+  sr.model.comparison.list, pattern, SIMPLIFY = FALSE)
+rm(sr.altall.seqs.list)
 
 
+ha.model.comparison.list <- mapply(function(x, y) 
+  merge(x, ha.altall.seqs.list[[y]], by = c("node", "site")),
+  ha.model.comparison.list, pattern, SIMPLIFY = FALSE)
+rm(ha.altall.seqs.list)
 
-abc <- merge(ha_model_comparison_list[[1]], ha.altall.seqs.list[[2]], by = c("node", "site"))
+pattern <- c(1,2,2)
 
-abc[, alt_mismatch := ifelse(h1 == h3 | h1 == alt_h3, "identical", "disagreement")]
-abc[, true_alt_mismatch := ifelse(gap == "gap", "identical", alt_mismatch)]
-
-
+rbd.model.comparison.list <- mapply(function(x, y) 
+  merge(x, rbd.altall.seqs.list[[y]], by = c("node", "site")),
+  rbd.model.comparison.list, pattern, SIMPLIFY = FALSE)
+rm(rbd.altall.seqs.list)
 
 ```
 
+```{r}
+
+for (i in seq_along(sr.model.comparison.list)) {
+  sr.model.comparison.list[[i]][, alt_mismatch := ifelse(.SD[[3]] == .SD[[4]] | .SD[[3]] == .SD[[8]], "identical", "disagreement")]
+  sr.model.comparison.list[[i]][, true_alt_mismatch := ifelse(gap == "gap", "identical", alt_mismatch)]
+}
+
+
+for (i in seq_along(rbd.model.comparison.list)) {
+  rbd.model.comparison.list[[i]][, alt_mismatch := ifelse(.SD[[3]] == .SD[[4]] | .SD[[3]] == .SD[[8]], "identical", "disagreement")]
+  rbd.model.comparison.list[[i]][, true_alt_mismatch := ifelse(gap == "gap", "identical", alt_mismatch)]
+}
+
+for (i in seq_along(ha.model.comparison.list)) {
+  ha.model.comparison.list[[i]][, alt_mismatch := ifelse(.SD[[3]] == .SD[[4]] | .SD[[3]] == .SD[[8]], "identical", "disagreement")]
+  ha.model.comparison.list[[i]][, true_alt_mismatch := ifelse(gap == "gap", "identical", alt_mismatch)]
+}
+
+summary.plausible.identity <- function(dt_list, model_pairs, model_names){
+  
+  # Pre-allocate output data table that will contain the data for all the pairwise
+  # comparisons of each protein family
+  model_comparison <- data.table(true_alt_mismatch = character(), 
+                           count = integer(), 
+                           percentage = numeric(),
+                           model_a = character(),
+                           model_b = character(),
+                           stringsAsFactors = FALSE)
+  
+  # Loop through all comparisons in the list
+  for(i in 1:length(dt_list)){
+  
+    # Locally store each data table in the list to compare
+    site_comparison <- dt_list[[i]]
+  
+    # Calculate the total number and percentage of "identical" and "disagreement" 
+    # in the true_mismatch column. Percentages are relative to the total number of
+    # reconstructions in the entire tree
+    site_comparison <- site_comparison[, .(count = .N), by = true_alt_mismatch][,
+      percentage := count/nrow(site_comparison)*100][]
+  
+    # Store the names of the compared models within each table, which should
+    # match those in the model pair table
+    model_a <- sub(".*_", "", model_pairs[1, i]) 
+    model_b <- paste0("alt_", sub(".*_", "", model_pairs[2, i]))
+  
+    # Add model names to the rest of the summarized table
+    site_comparison[, model_a := model_a]
+    site_comparison[, model_b := model_b]
+    
+    # Append data to the main table
+    model_comparison <- rbind(model_comparison, site_comparison)
+  }
+  
+  # Generate table with the self-comparisons between models. 
+  self_comparisons <- data.table(true_alt_mismatch = "identical", 
+                           count = nrow(dt_list[[1]]), 
+                           percentage = 100,
+                           model_a = model_names,
+                           model_b = paste0("alt_", model_names),
+                           stringsAsFactors = FALSE)
+  
+  # Append self comparisons with main data table
+  model_comparison <- rbind(model_comparison, self_comparisons)
+  
+  return(model_comparison)
+}
+
+sr.plausible.summary <- summary.plausible.identity(sr.model.comparison.list, sr.model.pairs, sr.model.list)
+sr.plausible.summary$model_a <- factor(sr.plausible.summary$model_a, levels = sr.model.list)
+sr.plausible.summary$model_b <- factor(sr.plausible.summary$model_b, levels = rev(paste0("alt_", sr.model.list)))
+
+ggplot(sr.plausible.summary[true_alt_mismatch == "identical"], aes(x = model_b, y = model_a)) +
+  geom_tile(color = "black", fill = "grey60") +
+  geom_text(aes(label = round(percentage, digits = 1)), size = 8) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        aspect.ratio = 1) +
+  labs(x = "Plausible reconstructions",
+       y = "ML reconstructions",
+       fill = "Identity (%)")
+
+
+```
 
 
 
@@ -563,10 +661,10 @@ sr_rates <- get_evol_rate("C:/Users/rmuniztrejo/Box/empirical_asr/results/empiri
 sr_entropy <- get_sequence_entropy("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/sr_entropy.csv")
 
 
-for(i in seq_along(sr_model_comparison_list)) {
-  table <- cbind(sr_model_comparison_list[[i]], sr_parsimony)
+for(i in seq_along(sr.model.comparison.list)) {
+  table <- cbind(sr.model.comparison.list[[i]], sr_parsimony)
   table[, true_amb := ifelse(gap == "gap", "unambiguous", pars_amb)]
-  sr_model_comparison_list[[i]] <- cbind(table, 
+  sr.model.comparison.list[[i]] <- cbind(table, 
                                          rates = sr_rates, 
                                          entropy = sr_entropy)
 }
@@ -578,10 +676,10 @@ ha_entropy <- get_sequence_entropy("C:/Users/rmuniztrejo/Box/empirical_asr/resul
 
 
 
-for(i in seq_along(ha_model_comparison_list)) {
-  table <- cbind(ha_model_comparison_list[[i]], ha_parsimony)
+for(i in seq_along(ha.model.comparison.list)) {
+  table <- cbind(ha.model.comparison.list[[i]], ha_parsimony)
   table[, true_amb := ifelse(gap == "gap", "unambiguous", pars_amb)]
-  ha_model_comparison_list[[i]] <- cbind(table, 
+  ha.model.comparison.list[[i]] <- cbind(table, 
                                          rates = ha_rates, 
                                          entropy = ha_entropy)
 }
@@ -592,10 +690,10 @@ rbd_rates <- get_evol_rate("C:/Users/rmuniztrejo/Box/empirical_asr/results/empir
 rbd_entropy <- get_sequence_entropy("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/rbd_entropy.csv")
 
 
-for(i in seq_along(rbd_model_comparison_list)) {
-  table <- cbind(rbd_model_comparison_list[[i]], rbd_parsimony)
+for(i in seq_along(rbd.model.comparison.list)) {
+  table <- cbind(rbd.model.comparison.list[[i]], rbd_parsimony)
   table[, true_amb := ifelse(gap == "gap", "unambiguous", pars_amb)]
-  rbd_model_comparison_list[[i]] <- cbind(table, 
+  rbd.model.comparison.list[[i]] <- cbind(table, 
                                          rates = rbd_rates, 
                                          entropy = rbd_entropy)
 }
@@ -670,9 +768,9 @@ get_contingency_table <- function(table_1, table_2){
   print(paste("Fisher's exact test, p-value: ", fisher_test$p.value))
 }
 
-get_contingency_table(sr_model_comparison_list[[2]], sr.among.site.alt.data)
-get_contingency_table(rbd_model_comparison_list[[1]], rbd.among.site.alt.data)
-get_contingency_table(ha_model_comparison_list[[2]], ha.among.site.alt.data)
+get_contingency_table(sr.model.comparison.list[[2]], sr.among.site.alt.data)
+get_contingency_table(rbd.model.comparison.list[[1]], rbd.among.site.alt.data)
+get_contingency_table(ha.model.comparison.list[[2]], ha.among.site.alt.data)
 
 ```
 
@@ -810,18 +908,18 @@ fisher_parsimony <- function(contingency_table){
 }
 
 sr_contingency_tables <- lapply(1:6, function(i) {
-  tables <- get_contingency_table(sr_model_comparison_list[[i]])
+  tables <- get_contingency_table(sr.model.comparison.list[[i]])
   return(tables)
 })
 
 
 ha_contingency_tables <- lapply(1:6, function(i) {
-  tables <- get_contingency_table(ha_model_comparison_list[[i]])
+  tables <- get_contingency_table(ha.model.comparison.list[[i]])
   return(tables)
 })
 
 rbd_contingency_tables <- lapply(1:3, function(i) {
-  tables <- get_contingency_table(rbd_model_comparison_list[[i]])
+  tables <- get_contingency_table(rbd.model.comparison.list[[i]])
   return(tables)
 })
 
@@ -1068,7 +1166,7 @@ identity_per_node <- function(model_comparison_table){
 
 sr_node_identity_binned <- data.frame()
 for(i in 1:3){
-  identity_binned <- identity_per_node(sr_model_comparison_list[[i]])
+  identity_binned <- identity_per_node(sr.model.comparison.list[[i]])
   identity_binned <- mutate(identity_binned, model = sr.model.list[i+1])
   sr_node_identity_binned <- rbind(sr_node_identity_binned, identity_binned)
   
@@ -1077,7 +1175,7 @@ for(i in 1:3){
 
 ha_node_identity_binned <- data.frame()
 for(i in 1:3){
-  identity_binned <- identity_per_node(ha_model_comparison_list[[i]])
+  identity_binned <- identity_per_node(ha.model.comparison.list[[i]])
   identity_binned <- mutate(identity_binned, model = ha.model.list[i+1])
   ha_node_identity_binned <- rbind(ha_node_identity_binned, identity_binned)
   
@@ -1085,7 +1183,7 @@ for(i in 1:3){
 
 rbd_node_identity_binned <- data.frame()
 for(i in 1:2){
-  identity_binned <- identity_per_node(rbd_model_comparison_list[[i]])
+  identity_binned <- identity_per_node(rbd.model.comparison.list[[i]])
   identity_binned <- mutate(identity_binned, model = rbd.model.list[i+1])
   rbd_node_identity_binned <- rbind(rbd_node_identity_binned, identity_binned)
 }
@@ -1438,14 +1536,14 @@ get_ks_test <- function(data){
 
 
 sr_nodes_with_dis <- unique(filter(sr_node_identity_binned, number_disagreements > 0)$node)
-count(filter(sr_model_comparison_list[[2]], node %in% sr_nodes_with_dis), true_mismatch == "identical")
+count(filter(sr.model.comparison.list[[2]], node %in% sr_nodes_with_dis), true_mismatch == "identical")
 
 rbd_nodes_with_dis <- unique(filter(rbd_node_identity_binned, number_disagreements > 0)$node)
-count(filter(rbd_model_comparison_list[[1]], node %in% rbd_nodes_with_dis), true_mismatch == "identical")
+count(filter(rbd.model.comparison.list[[1]], node %in% rbd_nodes_with_dis), true_mismatch == "identical")
 
 
 ha_nodes_with_dis <- unique(filter(ha_node_identity_binned, number_disagreements > 0)$node)
-count(filter(ha_model_comparison_list[[2]], node %in% ha_nodes_with_dis), true_mismatch == "identical")
+count(filter(ha.model.comparison.list[[2]], node %in% ha_nodes_with_dis), true_mismatch == "identical")
 
 
 filter.node.data <- function(table, list_disagreements){
@@ -1460,17 +1558,17 @@ filter.node.data <- function(table, list_disagreements){
 ##### Disagreements with best SH model #####################
 ############################################################
 
-sr_main_node_data <- filter.node.data(sr_model_comparison_list[[2]], sr_nodes_with_dis) %>% mutate(system = "sr DBD")
-rbd_main_node_data <- filter.node.data(rbd_model_comparison_list[[1]], rbd_nodes_with_dis) %>% mutate(system = "SARS rbd")
-ha_main_node_data <- filter.node.data(ha_model_comparison_list[[2]], ha_nodes_with_dis) %>% mutate(system = "ha")
+sr_main_node_data <- filter.node.data(sr.model.comparison.list[[2]], sr_nodes_with_dis) %>% mutate(system = "sr DBD")
+rbd_main_node_data <- filter.node.data(rbd.model.comparison.list[[1]], rbd_nodes_with_dis) %>% mutate(system = "SARS rbd")
+ha_main_node_data <- filter.node.data(ha.model.comparison.list[[2]], ha_nodes_with_dis) %>% mutate(system = "ha")
 
 
 All_main_node_data <- rbind(sr_main_node_data, rbd_main_node_data, ha_main_node_data)
 All_main_node_data$system <- factor(All_main_node_data$system, levels = c("sr DBD", "SARS rbd", "ha"))
 
-get_ks_test(sr_model_comparison_list[[2]])
-get_ks_test(rbd_model_comparison_list[[1]])
-get_ks_test(ha_model_comparison_list[[2]])
+get_ks_test(sr.model.comparison.list[[2]])
+get_ks_test(rbd.model.comparison.list[[1]])
+get_ks_test(ha.model.comparison.list[[2]])
 
 
 All_main_node_data %>%
@@ -1512,15 +1610,15 @@ All_main_node_data %>%
 ############################################################
 
 
-sr_epistasis_node_data <- filter.node.data(sr_model_comparison_list[[1]], sr_nodes_with_dis) %>% mutate(system = "sr DBD")
-ha_epistasis_node_data <- filter.node.data(ha_model_comparison_list[[1]], ha_nodes_with_dis) %>% mutate(system = "ha")
+sr_epistasis_node_data <- filter.node.data(sr.model.comparison.list[[1]], sr_nodes_with_dis) %>% mutate(system = "sr DBD")
+ha_epistasis_node_data <- filter.node.data(ha.model.comparison.list[[1]], ha_nodes_with_dis) %>% mutate(system = "ha")
 
 
 All_epistasis_node_data <- rbind(sr_epistasis_node_data, ha_epistasis_node_data)
 All_epistasis_node_data$system <- factor(All_epistasis_node_data$system, levels = c("sr DBD", "ha"))
 
-get_ks_test(sr_model_comparison_list[[1]])
-get_ks_test(ha_model_comparison_list[[1]])
+get_ks_test(sr.model.comparison.list[[1]])
+get_ks_test(ha.model.comparison.list[[1]])
 
 
 plot.rates.boxplot(All_epistasis_node_data) +
@@ -1580,13 +1678,13 @@ get_ks_test <- function(data){
 
 
 
-get_ks_test(sr_model_comparison_list[[2]])
-get_ks_test(rbd_model_comparison_list[[1]])
-get_ks_test(ha_model_comparison_list[[2]])
+get_ks_test(sr.model.comparison.list[[2]])
+get_ks_test(rbd.model.comparison.list[[1]])
+get_ks_test(ha.model.comparison.list[[2]])
 
 
-get_ks_test(sr_model_comparison_list[[1]])
-get_ks_test(ha_model_comparison_list[[1]])
+get_ks_test(sr.model.comparison.list[[1]])
+get_ks_test(ha.model.comparison.list[[1]])
 
 
 ```
@@ -1667,16 +1765,16 @@ summarise_parsimony_data <- function(model_comparison_list, parsimony_data){
 
 
 
-sr_Poisson_parsimony <- summarise_parsimony_data(sr_model_comparison_list[[2]], sr_parsimony)
-sr_JTT_parsimony <- summarise_parsimony_data(sr_model_comparison_list[[3]], sr_parsimony)
-sr_HsMR_parsimony <- summarise_parsimony_data(sr_model_comparison_list[[4]], sr_parsimony)
+sr_Poisson_parsimony <- summarise_parsimony_data(sr.model.comparison.list[[2]], sr_parsimony)
+sr_JTT_parsimony <- summarise_parsimony_data(sr.model.comparison.list[[3]], sr_parsimony)
+sr_HsMR_parsimony <- summarise_parsimony_data(sr.model.comparison.list[[4]], sr_parsimony)
 
-ha_Poisson_parsimony <- summarise_parsimony_data(ha_model_comparison_list[[2]], ha_parsimony)
-ha_FLU_parsimony <- summarise_parsimony_data(ha_model_comparison_list[[3]], ha_parsimony)
-ha_H3_parsimony <- summarise_parsimony_data(ha_model_comparison_list[[4]], ha_parsimony)
+ha_Poisson_parsimony <- summarise_parsimony_data(ha.model.comparison.list[[2]], ha_parsimony)
+ha_FLU_parsimony <- summarise_parsimony_data(ha.model.comparison.list[[3]], ha_parsimony)
+ha_H3_parsimony <- summarise_parsimony_data(ha.model.comparison.list[[4]], ha_parsimony)
 
-rbd_Poisson_parsimony <- summarise_parsimony_data(rbd_model_comparison_list[[2]], rbd_parsimony)
-rbd_WAG_parsimony <- summarise_parsimony_data(rbd_model_comparison_list[[3]], rbd_parsimony)
+rbd_Poisson_parsimony <- summarise_parsimony_data(rbd.model.comparison.list[[2]], rbd_parsimony)
+rbd_WAG_parsimony <- summarise_parsimony_data(rbd.model.comparison.list[[3]], rbd_parsimony)
 
 ```
 
