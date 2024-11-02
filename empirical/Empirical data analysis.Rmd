@@ -16,7 +16,11 @@ knitr::opts_chunk$set(echo = TRUE,
 ```{r set up necessary data for analysis}
 
 #Load all required packages
-requiredPackages <- c("tidyverse", "ggrepel", "svglite", "ape", "ggtree", "treeio", "viridis", "DescTools", "ggsignif", "data.table", "psych", "reshape2", "here")
+requiredPackages <- c("data.table", "here", "ggplot2")
+
+#requiredPackages <- c("tidyverse", "ggrepel", "svglite", "ape", "ggtree", "treeio", "viridis", "DescTools", "ggsignif", "data.table", "psych", "reshape2", "here")
+
+
 lapply(requiredPackages, require, character.only = TRUE)
 rm(requiredPackages)
 
@@ -34,16 +38,12 @@ results.path <- file.path(paste0(here(), "/empirical/results/"))
 # Basic parameters of each system
 sr.alignment.size <- 76
 sr.tips <- 70
-sr.model.list <- c("C_teleta_sr", "HsMR", "JTT", "Poisson") 
 
 rbd.alignment.size <- 182
 rbd.tips <- 37
-rbd.model.list <- c("SARS_CoV_2", "WAG", "Poisson") 
 
 ha.alignment.size <- 550
 ha.tips <- 92
-ha.model.list <- c("H1", "H3", "FLU", "Poisson") 
-
 
 ```
 
@@ -228,15 +228,15 @@ ha.model.pairs <- combn(ha.results.path, 2)
 # Apply compare.ml.states() to the pairs of models to obtain lists with each
 # pairwise comparison
 
-sr.model.comparison.list <- lapply(seq_len(ncol(sr.model.pairs)), function(i) {
+sr.model.comparison.list <- parallel::mclapply(seq_len(ncol(sr.model.pairs)), function(i) {
   compare.ml.states(sr.model.pairs[1, i], sr.model.pairs[2, i], sr.alignment.size, sr.gaps)
 })
 
-rbd.model.comparison.list <- lapply(seq_len(ncol(rbd.model.pairs)), function(i) {
+rbd.model.comparison.list <- parallel::mclapply(seq_len(ncol(rbd.model.pairs)), function(i) {
   compare.ml.states(rbd.model.pairs[1, i], rbd.model.pairs[2, i], rbd.alignment.size, rbd.gaps)
 })
 
-ha.model.comparison.list <- lapply(seq_len(ncol(ha.model.pairs)), function(i) {
+ha.model.comparison.list <- parallel::mclapply(seq_len(ncol(ha.model.pairs)), function(i) {
   compare.ml.states(ha.model.pairs[1, i], ha.model.pairs[2, i], ha.alignment.size, ha.gaps)
 })
 
@@ -311,10 +311,13 @@ ha.identity.summary <- summary.reconstruction.identity(ha.model.comparison.list,
 ha.identity.summary$model_a <- factor(ha.identity.summary$model_a, levels = ha.model.list)
 ha.identity.summary$model_b <- factor(ha.identity.summary$model_b, levels = rev(ha.model.list))
 
+# Free up some memory
+rm(sr.gaps)
+rm(rbd.gaps)
+rm(ha.gaps)
 ```
 
 ```{r plot comparisons of ML reconstructions}
-
 # Function to plot data using the same characteristics
 plot.pairwise.ML <- function(summarized_dt){
   
@@ -340,18 +343,36 @@ plot.pairwise.ML(ha.identity.summary)
 
 ```{r obtain AllAlt reconstructions of all models}
 
-# To determine if a site
-# a threshold of posterior probability that will determine if there is ambiguity
-# in assigning a single state
+# The set of plausible sites is defined based on some criteria of ambiguity. This
+# criteria defines instances where the state with the second highest posterior 
+# probability of reconstruction is included into the plausible set of states.
+# If the criteria is not met, then only the maximum a posteriori (MAP) state is 
+# included. There is no consensus about which criteria should be used, but there 
+# are some common ones that can be found in the literature. In this work, we 
+# defined ambiguity as sites where the state with the second highest posterior 
+# probability of reconstruction is higher than 0.2.
 
+# The following function, altall.seq(), takes a table with posterior probabilities
+# of each state at every site and analyses, site by site, if the established criteria
+# for ambiguity is met. During this process, the function creates the AltAll sequence
+# which includes the MAP states whenever the criteria is not met, and the second
+# highest state when it does. Plus, this function can be modified to evaluate 
+# ambiguity using different criteria. 
+
+# The three types of criteria are the following:
+# 1. The MAP state has a posterior probability lower than a certain threshold
+# 2. The state with the highest posterior probability is higher than a defindes
+#    threshold ("high_second").
+# 3. The ratio between the MAP state and the second highest state is higher than
+#    a defined threshold value ("ratio")
 
 altall.seq <- function(pp_table, threshold, condition) {
   
   # Read in the posterior probability table
   table <- fread(pp_table)
   
-  # Create an empty vector to store results
-  results <- c()
+  # Create an empty vector to store the reconstructions
+  reconstruction <- c()
   
   # Loop over each row (i. e. site) of the table
   for (i in 1:nrow(table)) {
@@ -379,69 +400,75 @@ altall.seq <- function(pp_table, threshold, condition) {
     if (condition == "high_second") {
       # If the second highest value is greater than or equal to the threshold
       if (second_max_val > threshold) {
-        # Add the amino acid with the second highest value to the results vector
-        results <- c(results, colnames(table)[second_index])
+        # Add the amino acid with the second highest value to the reconstruction vector
+        reconstruction <- c(reconstruction, colnames(table)[second_index])
         
       } else {
         # Add the amino acid with the highest value if the condition is not met
-        results <- c(results, colnames(table)[max_index])
+        reconstruction <- c(reconstruction, colnames(table)[max_index])
       }
       
     } else if (condition == "ratio") {
       # If the ratio between the highest and second highest value is less than 
       # the threshold
       if (ratio < threshold) {
-        # Add the amino acid with the second highest value to the results vector
-        results <- c(results, colnames(table)[second_index])
+        # Add the amino acid with the second highest value to the reconstruction vector
+        reconstruction <- c(reconstruction, colnames(table)[second_index])
         
       } else {
         # Add the amino acid with the highest value if the condition is not met
-        results <- c(results, colnames(table)[max_index])
+        reconstruction <- c(reconstruction, colnames(table)[max_index])
       }
       
     } else {
       # If the highest value is less than the threshold
       if (max_val < threshold) {
-        # Add the amino acid with the second highest value to the results vector
-        results <- c(results, colnames(table)[second_index])
+        # Add the amino acid with the second highest value to the reconstruction vector
+        reconstruction <- c(reconstruction, colnames(table)[second_index])
         
       } else {
-        # Add the amino acid with the highest value to the results vector
-        results <- c(results, colnames(table)[max_index])
+        # Add the amino acid with the highest value to the reconstruction vector
+        reconstruction <- c(reconstruction, colnames(table)[max_index])
       }
     }
   }
   
-  # Return the results vector as a single protein sequence
-  return(results)
+  # Return the reconstruction vector as a single protein sequence
+  return(reconstruction)
 }
 
+# The previous function only applies to a single table of posterior probabilities
+# per reconstructed node. get.all.altall() is used to iterate over all nodes and
+# generates a data table that relates each reconstructions to the site and node
+# they correspond. 
 
 get.all.altall <- function(system.results.path, alignment.size, condition, threshold){
   
-  # Create a site vector from 1 to the alignment size
+  # Specify the total number of sites in a reconstruction
   site <- 1:alignment.size
   
+  # List all the _PP.txt files in a ASR/ folder
   pp_file_list <- list.files(path = file.path(results.path, system.results.path, "ASR"), pattern = "[0-9]{1,3}_PP.txt")
   
+  # Pre allocate a table to store all the data
   alt.states.dt <- data.table(node = integer(),
                           site = integer(),
                           alt_seq = character())
 
+  # Loop through all the _PP.txt files. 
   for (i in seq_along(pp_file_list)) {
     
-    # Get node number from filename
+    # Get node number from filename and repeat as many times as there are sites
     node_number <- rep(parse_number(pp_file_list[i]), 
-                       times = alignment.size)  
+                       times = alignment.size)
     
-    model_2_sequence_alt <- altall.seq(file.path(results.path, system.results.path, "ASR", pp_file_list[[i]]), threshold, condition)
-    
-    if(length(model_2_sequence_alt) == alignment.size){} else {print("error")}
+    # Use altall.seq() to obtain the plausible reconstruction
+    altall_sequence <- altall.seq(file.path(results.path, system.results.path, "ASR", pp_file_list[[i]]), threshold, condition)
 
-    # Bind the node, site, model 1, model 2, and mismatch columns to the output data table
+    # Store the results in the the output data table
     alt.states.dt <- rbind(alt.states.dt, data.table(node = node_number,
                                          site = site, 
-                                         alt_seq = model_2_sequence_alt))
+                                         alt_seq = altall_sequence))
   }
   
   # Change name to identify from which model are we collecting the alt states
@@ -450,6 +477,11 @@ get.all.altall <- function(system.results.path, alignment.size, condition, thres
   
   return(alt.states.dt)
 }
+
+# In this analysis we only interrogated if reconstruction ambiguity in the less 
+# fit models can account for some of the disagreements with the more fit models.
+# As such, we only obtained the plausible sets for less fit models in each 
+# protein family. 
 
 # Generating each AltAll sequence for all possible nodes can be computationally
 # intensive and takes a long time for a single node. I implemented 
@@ -470,50 +502,72 @@ ha.altall.seqs.list <- parallel::mclapply(2:length(ha.results.path), function(i)
 
 ```
 
-
-
-
 ```{r merge data tables with plausible set}
+
+# The next step was to merge the plausible reconstructions of each models with
+# their ML corresponding comparison. This requires matching each comparison data
+# table with the correct AltAll reconstructions by node and site.
 
 pattern <- c(1,2,3,2,3,3)
 
 sr.model.comparison.list <- mapply(function(x, y) 
   merge(x, sr.altall.seqs.list[[y]], by = c("node", "site")),
   sr.model.comparison.list, pattern, SIMPLIFY = FALSE)
-rm(sr.altall.seqs.list)
-
 
 ha.model.comparison.list <- mapply(function(x, y) 
   merge(x, ha.altall.seqs.list[[y]], by = c("node", "site")),
   ha.model.comparison.list, pattern, SIMPLIFY = FALSE)
-rm(ha.altall.seqs.list)
 
 pattern <- c(1,2,2)
 
 rbd.model.comparison.list <- mapply(function(x, y) 
   merge(x, rbd.altall.seqs.list[[y]], by = c("node", "site")),
   rbd.model.comparison.list, pattern, SIMPLIFY = FALSE)
-rm(rbd.altall.seqs.list)
 
+# Free some space by removing the AltAll sequences after merging
+rm(sr.altall.seqs.list)
+rm(ha.altall.seqs.list)
+rm(rbd.altall.seqs.list)
 ```
 
-```{r}
+```{r comparisons with the plausible set of reconstructions}
+
+# Lastly, we compared if the the ML state of the models with the highest fit in
+# each comparison is within the plausible set of the least fit model. We, again,
+# corrected for gaps in the reconstruction. 
 
 for (i in seq_along(sr.model.comparison.list)) {
-  sr.model.comparison.list[[i]][, alt_mismatch := ifelse(.SD[[3]] == .SD[[4]] | .SD[[3]] == .SD[[8]], "identical", "disagreement")]
-  sr.model.comparison.list[[i]][, true_alt_mismatch := ifelse(gap == "gap", "identical", alt_mismatch)]
+  # Column 3 has the highest fit model states, 4 and 8 have the ML and Plausible
+  # set of the least fit model in each comparison
+  sr.model.comparison.list[[i]][, alt_mismatch := ifelse(.SD[[3]] == .SD[[4]] | 
+                                                           .SD[[3]] == .SD[[8]], 
+                                                         "identical", "disagreement")]
+  sr.model.comparison.list[[i]][, true_alt_mismatch := ifelse(gap == "gap",
+                                                              "identical",
+                                                              alt_mismatch)]
 }
 
-
 for (i in seq_along(rbd.model.comparison.list)) {
-  rbd.model.comparison.list[[i]][, alt_mismatch := ifelse(.SD[[3]] == .SD[[4]] | .SD[[3]] == .SD[[8]], "identical", "disagreement")]
-  rbd.model.comparison.list[[i]][, true_alt_mismatch := ifelse(gap == "gap", "identical", alt_mismatch)]
+  rbd.model.comparison.list[[i]][, alt_mismatch := ifelse(.SD[[3]] == .SD[[4]] | 
+                                                            .SD[[3]] == .SD[[8]], 
+                                                          "identical", "disagreement")]
+  rbd.model.comparison.list[[i]][, true_alt_mismatch := ifelse(gap == "gap", 
+                                                               "identical", 
+                                                               alt_mismatch)]
 }
 
 for (i in seq_along(ha.model.comparison.list)) {
-  ha.model.comparison.list[[i]][, alt_mismatch := ifelse(.SD[[3]] == .SD[[4]] | .SD[[3]] == .SD[[8]], "identical", "disagreement")]
-  ha.model.comparison.list[[i]][, true_alt_mismatch := ifelse(gap == "gap", "identical", alt_mismatch)]
+  ha.model.comparison.list[[i]][, alt_mismatch := ifelse(.SD[[3]] == .SD[[4]] | 
+                                                           .SD[[3]] == .SD[[8]], 
+                                                         "identical", "disagreement")]
+  ha.model.comparison.list[[i]][, true_alt_mismatch := ifelse(gap == "gap", 
+                                                              "identical", 
+                                                              alt_mismatch)]
 }
+
+# Similar to summary.reconstruction.identity(), summary.plausible.identity() creates
+# a summary table of all the number and percentage of identical and disagreeing
+# reconstructions with the plausible sets. 
 
 summary.plausible.identity <- function(dt_list, model_pairs, model_names){
   
@@ -565,31 +619,130 @@ summary.plausible.identity <- function(dt_list, model_pairs, model_names){
   return(model_comparison)
 }
 
+# Obtain the summarized data
 sr.plausible.summary <- summary.plausible.identity(sr.model.comparison.list, sr.model.pairs, sr.model.list)
-sr.plausible.summary$model_a <- factor(sr.plausible.summary$model_a, levels = sr.model.list)
-sr.plausible.summary$model_b <- factor(sr.plausible.summary$model_b, levels = rev(paste0("alt_", sr.model.list)))
+sr.plausible.summary$model_a <- factor(sr.plausible.summary$model_a, levels = rev(sr.model.list))
+sr.plausible.summary$model_b <- factor(sr.plausible.summary$model_b, levels = paste0("alt_", sr.model.list))
 
-ggplot(sr.plausible.summary[true_alt_mismatch == "identical"], aes(x = model_b, y = model_a)) +
-  geom_tile(color = "black", fill = "grey60") +
+rbd.plausible.summary <- summary.plausible.identity(rbd.model.comparison.list, rbd.model.pairs, rbd.model.list)
+rbd.plausible.summary$model_a <- factor(rbd.plausible.summary$model_a, levels = rev(rbd.model.list))
+rbd.plausible.summary$model_b <- factor(rbd.plausible.summary$model_b, levels = paste0("alt_", rbd.model.list))
+
+ha.plausible.summary <- summary.plausible.identity(ha.model.comparison.list, ha.model.pairs, ha.model.list)
+ha.plausible.summary$model_a <- factor(ha.plausible.summary$model_a, levels = rev(ha.model.list))
+ha.plausible.summary$model_b <- factor(ha.plausible.summary$model_b, levels = paste0("alt_", ha.model.list))
+
+```
+
+```{r plot comparisons of plausible reconstructions}
+# Function to plot data using the same characteristics
+plot.pairwise.alt <- function(summarized_dt){
+  
+  # Only the percentages for identical reconstructions is plotted
+  plot <- ggplot(summarized_dt[true_alt_mismatch == "identical"], aes(x = model_b, y = model_a)) +
+  geom_tile(color = "black", fill = "white") +
   geom_text(aes(label = round(percentage, digits = 1)), size = 8) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         aspect.ratio = 1) +
   labs(x = "Plausible reconstructions",
        y = "ML reconstructions",
        fill = "Identity (%)")
+  
+  return(plot)
+}
+
+# Plot the data such that the models with the plausible set are on the x-axis,
+# completing the upper diagonal with the previous plots
+plot.pairwise.alt(sr.plausible.summary)  
+plot.pairwise.alt(rbd.plausible.summary)  
+plot.pairwise.alt(ha.plausible.summary)  
+
+```
+
+```{r reduce data}
+
+# From this point on the among-site heterogeneity analysis centers only between 
+# the best site-specific model and the best site-homogeneous model, so we can
+# free some memory by removing the additional comparisons. For SR and HA we kept
+# the comparison between site-specific models to address the among-lineage
+# heterogeneity
+
+sr.model.comparison.list[c(3,4,5,6)] <- NULL
+rbd.model.comparison.list[c(2,3)] <- NULL
+ha.model.comparison.list[c(3,4,5,6)] <- NULL
 
 
 ```
 
 
+## Analysis of phylogenetic signal
+
+### Ambiguity by parsimony
+
+```{r load parsimony data}
+
+clean.pars.data <- function(path){
+  
+  # Read data from gaps in reconstructions
+  parsimony <- setDT(read.csv(path, header = TRUE))
+  
+  # Change table to long format by transforming all nodes into a single column
+  parsimony <- setDT(melt(parsimony, id.vars = "site", 
+                    measured.vars = 2:ncol(parsimony), 
+                    variable.name = "node"))
+  
+  # Reading the data adds a "X" to node names, change to actual node numbers
+  parsimony[, node := as.numeric(gsub("[^0-9]", "", node))]
+  
+  # Recodify sites 
+  parsimony[, pars_ambiguous := ifelse(nchar(value) > 1, "ambiguous", "unambiguous")]
+  parsimony <- parsimony[, c("site", "node", "pars_ambiguous")]
+  
+  return(parsimony)
+
+}
 
 
+# Read files with gaps by parsimony
+sr_pars_file <- file.path(paste0(data.path, "/sr_parsimony.csv"))
+ha_pars_file <- file.path(paste0(data.path, "/ha_parsimony_gaps.csv"))
+rbd_pars_file <- file.path(paste0(data.path, "/rbd_parsimony_gaps.csv"))
+
+# Use clean.gap.data() to organize information
+sr.parsimony <- clean.pars.data(sr_pars_file)
+ha.parsimony <- clean.gap.data(ha_pars_file)
+rbd.parsimony <- clean.gap.data(rbd_pars_file)
 
 
+for(i in 1:length(sr.model.comparison.list)){
+  sr.model.comparison.list[[i]] <- merge(sr.model.comparison.list[[i]], 
+                                         sr.parsimony, 
+                                         by = c("node", "site"))
+  sr.model.comparison.list[[i]][, true_pars_ambiguous := ifelse(gap == "gap", "unambiguous", pars_ambiguous)]
+  sr.model.comparison.list[[i]][, c(1,2,3,4,8,6,7,10,12)]
+}
+
+for(i in 1:length(rbd.model.comparison.list)){
+  rbd.model.comparison.list[[i]] <- merge(rbd.model.comparison.list[[i]], 
+                                         rbd.parsimony, 
+                                         by = c("node", "site"))
+  rbd.model.comparison.list[[i]][, true_pars_ambiguous := ifelse(gap == "gap", "unambiguous", pars_ambiguous)]
+  rbd.model.comparison.list[[i]][, c(1,2,3,4,8,6,7,10,12)]
+}
 
 
+for(i in 1:length(ha.model.comparison.list)){
+  ha.model.comparison.list[[i]] <- merge(ha.model.comparison.list[[i]], 
+                                         ha.parsimony, 
+                                         by = c("node", "site"))
+  ha.model.comparison.list[[i]][, true_pars_ambiguous := ifelse(gap == "gap", "unambiguous", pars_ambiguous)]
+  ha.model.comparison.list[[i]][, c(1,2,3,4,8,6,7,10,12)]
+}
 
-## Load site specific data
+
+```
+
+
 
 ```{r append site-specific data to the comparisons}
 
@@ -610,9 +763,9 @@ read_parsimony_data <- function(node_directory, parsimony_file_path){
   # Put everything into a tibble and modify to reflect ambiguity
   parsimony_data <- parsimony %>%
     gather("node", "pars_state", -1) %>% 
-    mutate(pars_amb = ifelse(nchar(pars_state) > 1, "ambiguous", "unambiguous"))
+    mutate(pars_ambiguous = ifelse(nchar(pars_state) > 1, "ambiguous", "unambiguous"))
 
-  return(parsimony_data[, c("pars_amb", "pars_state")])
+  return(parsimony_data[, c("pars_ambiguous", "pars_state")])
 }
 
 
@@ -663,7 +816,7 @@ sr_entropy <- get_sequence_entropy("C:/Users/rmuniztrejo/Box/empirical_asr/resul
 
 for(i in seq_along(sr.model.comparison.list)) {
   table <- cbind(sr.model.comparison.list[[i]], sr_parsimony)
-  table[, true_amb := ifelse(gap == "gap", "unambiguous", pars_amb)]
+  table[, true_amb := ifelse(gap == "gap", "unambiguous", pars_ambiguous)]
   sr.model.comparison.list[[i]] <- cbind(table, 
                                          rates = sr_rates, 
                                          entropy = sr_entropy)
@@ -678,7 +831,7 @@ ha_entropy <- get_sequence_entropy("C:/Users/rmuniztrejo/Box/empirical_asr/resul
 
 for(i in seq_along(ha.model.comparison.list)) {
   table <- cbind(ha.model.comparison.list[[i]], ha_parsimony)
-  table[, true_amb := ifelse(gap == "gap", "unambiguous", pars_amb)]
+  table[, true_amb := ifelse(gap == "gap", "unambiguous", pars_ambiguous)]
   ha.model.comparison.list[[i]] <- cbind(table, 
                                          rates = ha_rates, 
                                          entropy = ha_entropy)
@@ -692,7 +845,7 @@ rbd_entropy <- get_sequence_entropy("C:/Users/rmuniztrejo/Box/empirical_asr/resu
 
 for(i in seq_along(rbd.model.comparison.list)) {
   table <- cbind(rbd.model.comparison.list[[i]], rbd_parsimony)
-  table[, true_amb := ifelse(gap == "gap", "unambiguous", pars_amb)]
+  table[, true_amb := ifelse(gap == "gap", "unambiguous", pars_ambiguous)]
   rbd.model.comparison.list[[i]] <- cbind(table, 
                                          rates = rbd_rates, 
                                          entropy = rbd_entropy)
@@ -777,96 +930,6 @@ get_contingency_table(ha.model.comparison.list[[2]], ha.among.site.alt.data)
 
 
 
-```{r model comparison plots}
-
-plot.main.comparison <- function(table, color_choice){
-  plot <- ggplot(table, aes(x = model_1, y = model_2)) +
-  geom_tile(color = "black", fill = color_choice) +
-  geom_text(aes(label = round(identical_states_percent, digits = 1)), size = 8) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        aspect.ratio = 1) +
-  labs(x = "ML states",
-       y = "ML states",
-       fill = "Identity (%)")
-  return(plot)
-}
-
-plot.alt.comparison <- function(table, color_choice){
-  plot <- ggplot(table, aes(y = model_1, x = model_2)) +
-  geom_tile(color = "black", fill = color_choice) +
-  geom_text(aes(label = round(identical_states_percent, digits = 1)), size = 8) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        aspect.ratio = 1) +
-  labs(y = "ML states",
-       x = "Alt states",
-       fill = "Identity (%)")
-  return(plot)
-}
-
-
-############################################################
-##### Disagreements with best SH model #####################
-############################################################
-
-
-sr_main_model_disagreement <- filter(sr_model_disagreements_table, model_2 != "HsMR") %>% 
-                              filter(model_1 != "HsMR")
-sr_main_alt_disagreement <- filter(sr_alt_disagreements_table, model_2 != "HsMR") %>% 
-                              filter(model_1 != "HsMR")
-
-ha_main_model_disagreement <- filter(ha_model_disagreements_table, model_2 != "H3") %>% 
-                              filter(model_1 != "H3")
-ha_main_alt_disagreement <- filter(ha_alt_disagreements_table, model_2 != "H3") %>% 
-                              filter(model_1 != "H3")
-
-str(sr_alt_disagreements_table)
-str(sr_main_alt_disagreement)
-
-# sr DBD: ER-SS vs. JTT
-plot.main.comparison(sr_main_model_disagreement, "grey90")
-ggsave(file = paste0(figure.path, "/sr_main_ml_disagreement.svg"))
-plot.alt.comparison(sr_main_alt_disagreement, "white")
-ggsave(file = paste0(figure.path, "/sr_main_alt_disagreement.svg"))
-
-# SARS rbd: SARS-SS vs. WAG
-plot.main.comparison(rbd_model_disagreements_table, "grey90")
-ggsave(file = paste0(figure.path, "/rbd_main_ml_disagreement.svg"))
-plot.alt.comparison(rbd_alt_disagreements_table, "white")
-ggsave(file = paste0(figure.path, "/rbd_main_alt_disagreement.svg"))
-
-# SARS rbd: H1-SS vs. FLU
-plot.main.comparison(ha_main_model_disagreement, "grey90")
-ggsave(file = paste0(figure.path, "/ha_main_ml_disagreement.svg"))
-plot.alt.comparison(ha_main_alt_disagreement, "white")
-ggsave(file = paste0(figure.path, "/ha_main_alt_disagreement.svg"))
-
-############################################################
-##### Disagreements among site-specific models #############
-############################################################
-
-sr_epistasis_model_disagreement <- filter(sr_model_disagreements_table, model_1 %in% c("C_teleta_sr", "HsMR")) %>%
-                                  filter(model_2 %in% c("C_teleta_sr", "HsMR"))
-sr_epistasis_alt_disagreement <- filter(sr_alt_disagreements_table, model_1 %in% c("C_teleta_sr", "HsMR")) %>%
-                                  filter(model_2 %in% c("C_teleta_sr", "HsMR"))
-
-ha_epistasis_model_disagreement <- filter(ha_model_disagreements_table, model_1 %in% c("H1", "H3")) %>% 
-                                  filter(model_2 %in% c("H1", "H3"))
-ha_epistasis_alt_disagreement <- filter(ha_alt_disagreements_table, model_1 %in% c("H1", "H3")) %>% 
-                                  filter(model_2 %in% c("H1", "H3"))
-
-# sr DBD: ER-SS vs. ksr-SS
-plot.main.comparison(sr_epistasis_model_disagreement, "grey90")
-ggsave(file = paste0(figure.path, "/sr_epistasis_ml_disagreement.svg"))
-plot.alt.comparison(sr_epistasis_alt_disagreement, "white")
-ggsave(file = paste0(figure.path, "/sr_epistasis_alt_disagreement.svg"))
-
-# SARS rbd: H1-SS vs. H3-SS
-plot.main.comparison(ha_epistasis_model_disagreement, "grey90")
-ggsave(file = paste0(figure.path, "/ha_epistasis_ml_disagreement.svg"))
-plot.alt.comparison(ha_epistasis_alt_disagreement, "white")
-ggsave(file = paste0(figure.path, "/ha_epistasis_alt_disagreement.svg"))
-
-```
 
 ```{r contingency tables}
 
@@ -880,7 +943,7 @@ get_contingency_table <- function(table){
   model_2 <- colnames(table)[4]
   
   contingency_table <- table %>%
-    group_by(true_mismatch, pars_amb) %>%
+    group_by(true_mismatch, pars_ambiguous) %>%
     tally() %>%
     mutate(percent = n/nrow(table)*100) %>%
     mutate(model_1 = model_1, model_2 = model_2)
@@ -1711,7 +1774,7 @@ summarise_parsimony_data <- function(model_comparison_list, parsimony_data){
   #Do the disagreements among models accumulate in states that are reconstructed
   #ambiguously by parsimony?
   global_parsimony <- parsimony_table %>%
-    group_by(true_mismatch,pars_amb) %>%
+    group_by(true_mismatch,pars_ambiguous) %>%
     tally() %>%
     mutate(percent = n/nrow(parsimony_table)*100)
   
@@ -1720,7 +1783,7 @@ summarise_parsimony_data <- function(model_comparison_list, parsimony_data){
   
   #In parsimony unambiguous sites with disagreements, which model assigns the MP state?
   parsimony_unambiguous <- parsimony_table %>%
-    filter(pars_amb == "unambiguous") %>%
+    filter(pars_ambiguous == "unambiguous") %>%
     filter(true_mismatch == "Disagreement")
   
   
@@ -1735,7 +1798,7 @@ summarise_parsimony_data <- function(model_comparison_list, parsimony_data){
   #In parsimony ambiguous sites with disagreements, is the assigned state part of 
   #the MP set?
   parsimony_ambiguous <- parsimony_table %>%
-    filter(pars_amb == "ambiguous") %>%
+    filter(pars_ambiguous == "ambiguous") %>%
     filter(true_mismatch == "Disagreement")
   
   parsimony_ambiguous <- data.frame(number = c(sum(str_detect(parsimony_ambiguous[,9], parsimony_ambiguous[,3])),
@@ -1749,7 +1812,7 @@ summarise_parsimony_data <- function(model_comparison_list, parsimony_data){
   #Are identical reconstructions in parsimony ambiguous sites always within the
   #MP set?
   parsimony_identical <- parsimony_table %>%
-    filter(pars_amb == "ambiguous") %>%
+    filter(pars_ambiguous == "ambiguous") %>%
     filter(true_mismatch == "Identical")
   
   parsimony_identical <- data.frame(number = c(sum(str_detect(parsimony_identical[,9], parsimony_identical[,3])),
