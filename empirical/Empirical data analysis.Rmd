@@ -17,6 +17,7 @@ knitr::opts_chunk$set(echo = TRUE,
 
 #Load all required packages
 requiredPackages <- c("data.table", "here", "ggplot2", "readr")
+BiocManager::install("treeio")
 
 #requiredPackages <- c("tidyverse", "ggrepel", "svglite", "ape", "ggtree", "treeio", "viridis", "DescTools", "ggsignif", "data.table", "psych", "reshape2", "here")
 
@@ -677,8 +678,6 @@ ha.model.comparison.list[c(3,4,5,6)] <- NULL
 
 ## Analysis of phylogenetic signal
 
-### Ambiguity by parsimony
-
 ```{r load parsimony data}
 
 clean.pars.data <- function(path){
@@ -694,14 +693,15 @@ clean.pars.data <- function(path){
   # Reading the data adds a "X" to node names, change to actual node numbers
   parsimony[, node := as.numeric(gsub("[^0-9]", "", node))]
   
-  # Recodify sites .......
+  # Recodify sites so that sites with a single most parsimonious reconstructions
+  # are labelled as unambiguous, and those with multuple states are recoded as
+  # ambiguous
   parsimony[, pars_ambiguous := ifelse(nchar(value) > 1, "ambiguous", "unambiguous")]
   parsimony <- parsimony[, c("site", "node", "pars_ambiguous")]
   
   return(parsimony)
 
 }
-
 
 # Read files with gaps by parsimony
 sr_pars_file <- file.path(paste0(data.path, "/sr_parsimony.csv"))
@@ -713,7 +713,9 @@ sr.parsimony <- clean.pars.data(sr_pars_file)
 ha.parsimony <- clean.pars.data(ha_pars_file)
 rbd.parsimony <- clean.pars.data(rbd_pars_file)
 
-
+# Append parsimony info to the main tables. Also consider again the parsimony
+# reconstructions of the gaps to correct for artifacts in the reconstruction.
+# For SR
 for(i in 1:length(sr.model.comparison.list)){
   sr.model.comparison.list[[i]] <- merge(sr.model.comparison.list[[i]], 
                                          sr.parsimony, 
@@ -721,6 +723,7 @@ for(i in 1:length(sr.model.comparison.list)){
   sr.model.comparison.list[[i]][, pars_ambiguous := ifelse(gap == "gap", "unambiguous", pars_ambiguous)]
 }
 
+# For RBD
 for(i in 1:length(rbd.model.comparison.list)){
   rbd.model.comparison.list[[i]] <- merge(rbd.model.comparison.list[[i]], 
                                          rbd.parsimony, 
@@ -728,7 +731,7 @@ for(i in 1:length(rbd.model.comparison.list)){
   rbd.model.comparison.list[[i]][, pars_ambiguous := ifelse(gap == "gap", "unambiguous", pars_ambiguous)]
 }
 
-
+# For HA
 for(i in 1:length(ha.model.comparison.list)){
   ha.model.comparison.list[[i]] <- merge(ha.model.comparison.list[[i]], 
                                          ha.parsimony, 
@@ -737,6 +740,527 @@ for(i in 1:length(ha.model.comparison.list)){
 }
 
 ```
+
+```{r calculate harmonic branch lengths}
+
+# DMSPhyloAA produces two topologies: one cladogram with ancestral nodes 
+# labeled ("labeled_cladogram.txt"), and one with the estimated branch lengths,
+# but without labels ("phylogram.txt"). To associate the number of disagreements
+# between models and the estimated branch lenghts, we need to associate the 
+# ancestral node labels to the phylograms
+
+# The function label_ancestral_nodes extracts the labels from "labeled_cladogram.txt"
+# and adds them to the "phylogram.txt" trees by using the function as_tibble()
+# from the package treeio to transform tree data into tables.
+label_phylogram <- function(unlabeled, labeled){
+  
+  unlabeled_tree <- as.data.frame(treeio::as_tibble(unlabeled))
+  labeled_tree <- as.data.frame(treeio::as_tibble(labeled))
+  
+  # as_tibble will produce a column named label that includes the tip names for
+  # the unlabeled tree and NA values for the ancestral nodes, so we can discard
+  # them
+  unlabeled_tree <- dplyr::select(unlabeled_tree, -label)
+  
+  # extract the label names and their corresponding nodes from the labeled tree
+  # into a tibble
+  labels <- labeled_tree$label
+  nodes <- labeled_tree$node
+  
+  labels_for_tree <- tibble::tibble(label = labels,
+              node = nodes)
+  
+  # combine the unlabeled tree with the labels by the node values and return the
+  # new phylogram with labels
+  labeled_phylogram <- dplyr::full_join(unlabeled_tree,
+                                labels_for_tree, 
+                                by = "node")
+  return(labeled_phylogram)
+  
+}
+
+
+# In reference to the best fit topology
+
+
+# Load sr topologies
+sr_tree_labels <- read.newick(paste0(sr.path, "/C_teleta_sr/labeled_cladogram.txt"))
+sr_topologies <- lapply(c(paste0(sr.path, "/HsMR/phylogram.txt"),
+                          paste0(sr.path, "/JTT/phylogram.txt"),
+                          read.newick))
+read.newick()
+# Load ha topologies
+ha_tree_labels <- read.newick(paste0(ha.path, "/H1/labeled_cladogram.txt"))
+ha_topologies <- lapply(c(paste0(ha.path, "/H1/phylogram.txt"),
+                          paste0(ha.path, "/H3/phylogram.txt"),
+                          paste0(ha.path, "/FLU/phylogram.txt"),
+                          read.newick))
+
+# Load rbd topologies
+rbd_tree_labels <- read.newick(paste0(rbd.path, "/SARS_CoV_2/labeled_cladogram.txt"))
+rbd_topologies <- lapply(c(paste0(rbd.path, "/SARS_CoV_2/phylogram.txt"),
+                           paste0(rbd.path, "/WAG/phylogram.txt"),
+                           read.newick))
+sr.unlabeled.tree <- phytools::read.newick(paste0(results.path, "/sr_ss_er/phylogram.txt"))
+sr.labeled.tree <- phytools::read.newick(paste0(results.path, "/sr_ss_er/labeled_cladogram.txt"))
+
+rbd.unlabeled.tree <- phytools::read.newick(paste0(results.path, "/rbd_ss_sars/phylogram.txt"))
+rbd.labeled.tree <- phytools::read.newick(paste0(results.path, "/rbd_ss_sars/labeled_cladogram.txt"))
+
+ha.unlabeled.tree <- phytools::read.newick(paste0(results.path, "/ha_ss_h1/phylogram.txt"))
+ha.labeled.tree <- phytools::read.newick(paste0(results.path, "/ha_ss_h1/labeled_cladogram.txt"))
+
+sr.phylogram <- label_phylogram(sr.unlabeled.tree, sr.labeled.tree)
+rbd.phylogram <- label_phylogram(rbd.unlabeled.tree, rbd.labeled.tree)
+ha.phylogram <- label_phylogram(ha.unlabeled.tree, ha.labeled.tree)
+
+# Every ancestral node is connected to its parent node and two daughter nodes
+# by a certain branch length. To calculate how well connected a node is, we
+# have to incorporate the info on the three branches leading to that node. The
+# arithmetic mean may be a misleading number as branches can have very variable
+# lengths. As such, a better measurement is the harmonic mean, that penalizes
+# the effect of outliers. calc_harmonic_blens() is a function that pairs all 
+# ancestral nodes with their connecting branch length values to their parent and 
+# daughter nodes. Then, the function calculates the arithmetic mean and the 
+# harmonic mean per node. The function adds this data to a partial tibble of
+# the tree values that only contains the ancestral nodes for later plotting
+calc_harmonic_blens <- function(tree_with_data, num_tips){
+  
+  blens_df <- data.frame()
+  
+  # iterate only in ancestral nodes looking for branch length values
+  # given how trees are read, a fake root is incorporated into the tibble by
+  # adding an unexistant node that splits the branch length in two equal pieces
+  # the function corrects for that fake splitting exclusively for the extra
+  # node
+  for(i in seq(num_tips+2, nrow(tree_with_data))){
+    node <- tree_with_data$node[i]
+    parent_blens <- tree_with_data$branch.length[i]
+    daughter <- c()
+    
+    for(j in 1:nrow(tree_with_data)){
+      if(tree_with_data$node[i] == tree_with_data$parent[j]){
+        if(tree_with_data$parent[i] == num_tips+1) { # num_tips + 1 gives the "root" node 
+          daughter_blens <- tree_with_data$branch.length[j]*2
+          daughter <- c(daughter, daughter_blens)  
+        } else {
+          daughter_blens <- tree_with_data$branch.length[j]
+          daughter <- c(daughter, daughter_blens)
+        }
+      }
+    }
+    blens_data <- c(node, parent_blens, daughter[1], daughter[2])
+    blens_df <- rbind(blens_df, blens_data)
+  }
+  # rename for clarity
+  colnames(blens_df) <- c("node", "parent", "daughter_1", "daughter_2")
+  
+  blens_dt <- setDT(blens_df)
+  blens_dt[, arithmetic.blens := apply(.SD, 1, mean), .SDcols = c("parent", "daughter_1", "daughter_2")]
+  blens_dt[, harmonic.blens := apply(.SD, 1, psych::harmonic.mean), .SDcols = c("parent", "daughter_1", "daughter_2")]
+
+  return(blens_dt)
+
+}
+
+
+
+sr.blens <- calc_harmonic_blens(sr.phylogram, sr.tips)
+rbd.blens <- calc_harmonic_blens(rbd.phylogram, rbd.tips)
+ha.blens <- calc_harmonic_blens(ha.phylogram, ha.tips)
+
+
+
+```
+
+
+
+```{r load rate of evolution data}
+
+# Rates of evolution were calculated from the alignment and the topologies using
+# PhyML 3.0. The complete files are stored in empirical/data/, but for the purposes
+# of our analysis, only the column with the posterior mean rate is meaningful
+
+sr.rates <- setDT(read.csv(paste0(data.path, "/sr_rates.csv"), header = TRUE))
+sr.rates <- sr.rates[, c("Site", "Posterior.mean")]
+setnames(sr.rates, c("site", "rates"))
+
+rbd.rates <- setDT(read.csv(paste0(data.path, "/rbd_rates.csv"), header = TRUE))
+rbd.rates <- rbd.rates[, c("Site", "Posterior.mean")]
+setnames(rbd.rates, c("site", "rates"))
+
+ha.rates <- setDT(read.csv(paste0(data.path, "/ha_rates.csv"), header = TRUE))
+ha.rates <- ha.rates[, c("Site", "Posterior.mean")]
+setnames(ha.rates, c("site", "rates"))
+
+# Merge rates with  data tables by site
+
+for(i in 1:length(sr.model.comparison.list)){
+  sr.model.comparison.list[[i]] <- merge(sr.model.comparison.list[[i]], 
+                                         sr.rates, 
+                                         by = c("site"))
+}
+
+for(i in 1:length(rbd.model.comparison.list)){
+  rbd.model.comparison.list[[i]] <- merge(rbd.model.comparison.list[[i]], 
+                                         rbd.rates, 
+                                         by = c("site"))
+}
+
+for(i in 1:length(ha.model.comparison.list)){
+  ha.model.comparison.list[[i]] <- merge(ha.model.comparison.list[[i]], 
+                                         ha.rates, 
+                                         by = c("site"))
+}
+
+# Free space
+rm(sr.rates)
+rm(rbd.rates)
+rm(ha.rates)
+
+```
+
+
+
+```{r generate and load entropy data}
+
+# Load packages. phylotools allows for reading alignments in FASTA and PHYLIP
+# formats. seqinr allows for an easy transformation of character strings 
+# ('sequences') into a vector of characters ('states')
+library(phylotools)
+library(seqinr)
+
+calculate_entropy <- function(path) {
+  # Read alignment in PHYLIP format 
+  alignment <- read.phylip(path)
+  alignment_df <- data.frame()
+
+  # Split sequences into individual amino acids in a data frame
+  for(i in 1:nrow(alignment)){
+    site <- s2c(alignment$seq.text[i])
+    alignment_df <- rbind(alignment_df, site)
+  }
+
+  # At every site, calculate the Shannon entropy 
+  alignment_entropy <- c()
+   
+
+  for(site in 1:ncol(alignment_df)){
+  
+    states <- alignment_df[,site]
+  
+    # Calculate state frequency per site
+    unique_states <- unique(states)
+    state_frequency <- c()
+  
+    for(i in 1:length(unique_states)){
+      freq <- sum(states %in% unique_states[i])/length(states)
+      state_frequency <- c(state_frequency, freq)
+    }
+  
+    log_frequency <- logb(state_frequency, base = 21)
+    entropy <- sum(state_frequency*log_frequency)*-1
+    alignment_entropy <- c(alignment_entropy, entropy)
+  }
+  
+  entropy.dt <- data.table(site = 1:length(alignment_entropy),
+                         entropy = alignment_entropy)
+  return(entropy.dt)
+
+}
+
+sr.entropy <- calculate_entropy(paste0(data.path, "/sr_alignment.phy"))
+rbd.entropy <- calculate_entropy(paste0(data.path, "/rbd_alignment.phy"))
+ha.entropy <- calculate_entropy(paste0(data.path, "/ha_alignment.phy"))
+
+for(i in 1:length(sr.model.comparison.list)){
+  sr.model.comparison.list[[i]] <- merge(sr.model.comparison.list[[i]], 
+                                         sr.entropy, 
+                                         by = c("site"))
+}
+
+for(i in 1:length(rbd.model.comparison.list)){
+  rbd.model.comparison.list[[i]] <- merge(rbd.model.comparison.list[[i]], 
+                                         rbd.entropy, 
+                                         by = c("site"))
+}
+
+for(i in 1:length(ha.model.comparison.list)){
+  ha.model.comparison.list[[i]] <- merge(ha.model.comparison.list[[i]], 
+                                         ha.entropy, 
+                                         by = c("site"))
+}
+
+# Free space
+rm(sr.entropy)
+rm(rbd.entropy)
+rm(ha.entropy)
+
+```
+
+
+```{r }
+
+abc <- sr.model.comparison.list[[1]][, .(num_disagreements = sum(mismatch == "disagreement")), by = node]
+abc <- sr.model.comparison.list[[2]][, .(num_disagreements = sum(mismatch == "disagreement")), by = node]
+
+rbd.model.comparison.list[[1]][, .(num_disagreements = sum(mismatch == "disagreement")), by = node]
+
+ha.model.comparison.list[[1]][, .(num_disagreements = sum(mismatch == "disagreement")), by = node]
+abc <- ha.model.comparison.list[[2]][, .(num_disagreements = sum(mismatch == "disagreement")), by = node]
+
+
+abc <- merge(abc, sr.blens, by = c("node"))
+
+ggplot(abc, aes(x = harmonic.blens, y = num_disagreements)) +
+    geom_hline(yintercept = 0, color = "grey80") +
+    geom_vline(xintercept = 0, color = "grey80") +
+    geom_point(size = 2.5, stroke = 1.2)# +
+    scale_color_manual(values = colors) +
+    scale_shape_manual(values = shapes) +
+    labs(y = "# disagreements between reconstructions",
+         x = "Harmonic mean branch length",
+         color = "Model",
+         shape = "Model") +
+    theme_classic() +
+    theme(aspect.ratio = 1)
+
+```
+
+
+
+```{r}
+
+sr.
+
+```
+
+
+
+```{r}
+
+plot.entropy.boxplot <- function(table){
+  table$mismatch <- factor(table$mismatch, levels = c("identical", "disagreement"))
+  plot <- ggplot(table, aes(x = system, y = entropy, fill = mismatch)) +
+    geom_hline(yintercept = c(0, 0.5, 1), linetype = "dashed", color = "grey50") +
+    geom_boxplot(alpha = 0.8, width = 0.5) +
+    scale_fill_manual(values = c("#FFDFB9", "#A4193D")) +
+    scale_y_continuous(breaks = seq(0, 1, 0.25), limits = c(0,1)) +
+    theme(aspect.ratio = 1) +
+    labs(x = "Type of reconstruction",
+         y = "Sequence entropy",
+         fill = "Reconstruction \nbetween models")
+    
+  
+  return(plot)
+}
+
+plot.rates.boxplot <- function(table){
+  table$mismatch <- factor(table$mismatch, levels = c("identical", "disagreement"))
+  plot <- ggplot(table, aes(x = system, y = rates, fill = mismatch)) +
+    geom_hline(yintercept = 1, linetype = "dashed", color = "grey50") +
+    geom_boxplot(alpha = 0.8, width = 0.5) +
+    scale_fill_manual(values = c("#FFDFB9", "#A4193D")) +
+    scale_y_continuous(breaks = seq(0, 6, 1), limits = c(0,6.5)) +
+    theme(aspect.ratio = 1)+
+    labs(x = "Type of reconstruction",
+         y = "Rate of evolution",
+         fill = "Reconstruction \nbetween models")
+  
+  
+  
+  return(plot)
+}
+
+get_ks_test <- function(data){
+  table <- data
+  
+  parameters <- c("rate of evolution", "sequence entropy")
+  statistic <- c()
+  p.value <- c()
+  
+  set.seed(817685)
+  table <- table[sample(nrow(table), 1000)]
+  
+  group1 <- table$rates[table$mismatch == "identical"]
+  group2 <- table$rates[table$mismatch == "disagreement"]
+  results <- wilcox.test(group2, group1, paired = FALSE, alternative = "g", conf.int = TRUE)
+  print(results)
+  statistic <- c(statistic, as.numeric(results$statistic))
+  p.value <- c(p.value, results$p.value)
+  
+  group1 <- table$entropy[table$mismatch == "identical"]
+  group2 <- table$entropy[table$mismatch == "disagreement"]
+  #results <- ks.test(group2, group1)
+  results <- wilcox.test(group2, group1, paired = FALSE, alternative = "g", conf.int = TRUE)
+  print(results)
+  statistic <- c(statistic, as.numeric(results$statistic))
+  p.value <- c(p.value, results$p.value)
+  
+  df <- data.frame(parameters, statistic, p.value)
+  
+  print(paste("Asymptotic two-sample Kolmogorov-Smirnov test of", colnames(table[,3]), "and", colnames(table[,4])))
+  return(df)
+  
+}
+
+
+sr_nodes_with_dis <- unique(filter(sr_node_identity_binned, number_disagreements > 0)$node)
+count(filter(sr.model.comparison.list[[2]], node %in% sr_nodes_with_dis), mismatch == "identical")
+
+rbd_nodes_with_dis <- unique(filter(rbd_node_identity_binned, number_disagreements > 0)$node)
+count(filter(rbd.model.comparison.list[[1]], node %in% rbd_nodes_with_dis), mismatch == "identical")
+
+
+ha_nodes_with_dis <- unique(filter(ha_node_identity_binned, number_disagreements > 0)$node)
+count(filter(ha.model.comparison.list[[2]], node %in% ha_nodes_with_dis), mismatch == "identical")
+
+
+filter.node.data <- function(table, list_disagreements){
+  filtered_table <- table %>%
+  filter(node %in% list_disagreements) %>%
+  select(c(mismatch, rates, entropy))
+  
+  return(filtered_table)
+}
+
+############################################################
+##### Disagreements with best SH model #####################
+############################################################
+
+sr_main_node_data <- filter.node.data(sr.model.comparison.list[[2]], sr_nodes_with_dis) %>% mutate(system = "sr DBD")
+rbd_main_node_data <- filter.node.data(rbd.model.comparison.list[[1]], rbd_nodes_with_dis) %>% mutate(system = "SARS rbd")
+ha_main_node_data <- filter.node.data(ha.model.comparison.list[[2]], ha_nodes_with_dis) %>% mutate(system = "ha")
+
+
+All_main_node_data <- rbind(sr_main_node_data, rbd_main_node_data, ha_main_node_data)
+All_main_node_data$system <- factor(All_main_node_data$system, levels = c("sr DBD", "SARS rbd", "ha"))
+
+get_ks_test(sr.model.comparison.list[[2]])
+get_ks_test(rbd.model.comparison.list[[1]])
+get_ks_test(ha.model.comparison.list[[2]])
+
+
+All_main_node_data %>%
+  group_by(system, mismatch) %>%
+  summarise(median_rates = median(rates),
+            median_entropy = median(entropy))
+
+plot.rates.boxplot(All_main_node_data) +
+    geom_signif(
+      annotation = "***",
+      y_position = c(5.5, 6.3, 4.5), 
+      xmin = c(0.875, 1.875, 2.875), 
+      xmax = c(1.125, 2.125, 3.125),
+      tip_length = c(0.015,0.015)
+  )
+
+ggsave(file = paste0(figure.path, "/Main_rates_plot.svg"))
+
+plot.entropy.boxplot(All_main_node_data) + 
+    geom_signif(
+      annotation = "***",
+      y_position = c(0.70, 0.70, 0.9), 
+      xmin = c(0.875, 1.875, 2.875), 
+      xmax = c(1.125, 2.125, 3.125),
+      tip_length = c(0.015,0.015)
+  )
+
+
+ggsave(file = paste0(figure.path, "/Main_entropy_plot.svg"))
+
+All_main_node_data %>%
+  group_by(system, mismatch) %>%
+  summarise(median_rate = median(rates),
+            median_entropy = median(entropy))
+
+
+############################################################
+##### Disagreements among site-specific models #############
+############################################################
+
+
+sr_epistasis_node_data <- filter.node.data(sr.model.comparison.list[[1]], sr_nodes_with_dis) %>% mutate(system = "sr DBD")
+ha_epistasis_node_data <- filter.node.data(ha.model.comparison.list[[1]], ha_nodes_with_dis) %>% mutate(system = "ha")
+
+
+All_epistasis_node_data <- rbind(sr_epistasis_node_data, ha_epistasis_node_data)
+All_epistasis_node_data$system <- factor(All_epistasis_node_data$system, levels = c("sr DBD", "ha"))
+
+get_ks_test(sr.model.comparison.list[[1]])
+get_ks_test(ha.model.comparison.list[[1]])
+
+
+plot.rates.boxplot(All_epistasis_node_data) +
+    geom_signif(
+      annotation = "***",
+      y_position = c(5.5, 4.5), 
+      xmin = c(0.875, 1.875), 
+      xmax = c(1.125, 2.125),
+      tip_length = c(0.015,0.015)
+  )
+
+ggsave(file = paste0(epistasis.figure.path, "/rates.plot.svg"))
+
+plot.entropy.boxplot(All_epistasis_node_data)  + 
+    geom_signif(
+      annotation = "***",
+      y_position = c(0.7, 0.9), 
+      xmin = c(0.875, 1.875), 
+      xmax = c(1.125, 2.125),
+      tip_length = c(0.015,0.015)
+  )
+
+ggsave(file = paste0(epistasis.figure.path, "/entropy.plot.svg"))
+
+
+All_epistasis_node_data %>%
+  group_by(system, mismatch) %>%
+  summarise(median_rate = median(rates),
+            median_entropy = median(entropy))
+
+
+```
+
+
+
+```{r kolmogorov smirnoff}
+
+get_ks_test <- function(data){
+  table <- data
+  
+  parameters <- c("rate of evolution", "sequence entropy")
+  
+  
+  group1 <- table$rates[table$mismatch == "identical"]
+  group2 <- table$rates[table$mismatch == "disagreement"]
+  results <- ks.test(group2, group1)
+  print(paste("Kolmogorov-Smirnov test of", parameters[1]))
+  print(paste0("D(", length(group1),",", length(group2), ") = ", signif(results$statistic, digits = 4), ", p = ", signif(results$p.value, digits = 3)))
+  
+  group1 <- table$entropy[table$mismatch == "identical"]
+  group2 <- table$entropy[table$mismatch == "disagreement"]
+  results <- ks.test(group2, group1)
+  print(paste("Kolmogorov-Smirnov test of", parameters[2]))
+  print(paste0("D(", length(group1),",", length(group2), ") = ", signif(results$statistic, digits = 4), ", p = ", signif(results$p.value, digits = 3)))
+  
+}
+
+
+
+get_ks_test(sr.model.comparison.list[[2]])
+get_ks_test(rbd.model.comparison.list[[1]])
+get_ks_test(ha.model.comparison.list[[2]])
+
+
+get_ks_test(sr.model.comparison.list[[1]])
+get_ks_test(ha.model.comparison.list[[1]])
+
+
+```
+
+
+
 
 ```{r contingency tables for disagreements and ambiguity by parsimony}
 
@@ -912,67 +1436,6 @@ analysis_contingency_tables(ha_contingency_tables[[1]])
 
 
 
-
-
-```{r append site-specific data to the comparisons}
-
-
-## Rate of evolution ##
-get_evol_rate <- function(file_path) {
-  evol_rates <- read.csv(file_path)
-  evol_rates$Posterior.mean
-}
-
-## Sequence entropy ##
-get_sequence_entropy <- function(file_path) {
-  sequence_entropy <- read.csv(file_path)
-  sequence_entropy$entropy
-}
-
-
-shannon_entropy <- function(df) {
-  # Replace zeros with a small non-zero value
-  df[df == 0] <- 1e-20
-  
-  # Get the Shannon entropy of the values in each row
-  entropy <- apply(df, 1, function(x) {
-    -sum(x * log(x, base = 20)) # As in 20 amino acid states
-  })
-  
-  # Return the entropy
-  return(entropy)
-}
-
-
-max_per_row <- function(df) {
-  # Get the maximum value in each row
-  max_vals <- apply(df, 1, max)
-  
-  # Return the maximum values
-  return(max_vals)
-}
-
-aa_order <- c("A", "R", "N", "D", "C", "Q", "E", "G", "H", "I", 
-              "L", "K", "M", "F", "P", "S", "T", "W", "Y", "V")
-
-
-# Loop over the list and cbind each data table with extra_data
-sr_rates <- get_evol_rate("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/sr_phyml.csv")
-sr_entropy <- get_sequence_entropy("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/sr_entropy.csv")
-
-
-
-ha_rates <- get_evol_rate("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/ha_phyml.csv")
-ha_entropy <- get_sequence_entropy("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/ha_entropy.csv")
-
-
-
-
-rbd_rates <- get_evol_rate("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/rbd_phyml.csv")
-rbd_entropy <- get_sequence_entropy("C:/Users/rmuniztrejo/Box/empirical_asr/results/empirical/misc/rbd_entropy.csv")
-
-
-```
 
 
 
@@ -1361,230 +1824,6 @@ for(i in 1:2){
 ```
 
 
-```{r differences per node in phylogenies}
-
-# DMSPhyloAA produces two topologies: one cladogram with ancestral nodes 
-# labeled ("labeled_cladogram.txt"), and one with the estimated branch lengths,
-# but without labels ("phylogram.txt"). To associate the number of disagreements
-# between models and the estimated branch lenghts, we need to associate the 
-# ancestral node labels to the phylograms
-
-# The function label_ancestral_nodes extracts the labels from "labeled_cladogram.txt"
-# and adds them to the "phylogram.txt" trees by using the function as_tibble()
-# from the package treeio to transform tree data into tables.
-label_ancestral_nodes <- function(unlabeled, labeled){
-  # transform tree data into tibbles
-  unlabeled_tree <- treeio::as_tibble(unlabeled)
-  labeled_tree <- treeio::as_tibble(labeled)
-  
-  # as_tibble will produce a column named label that includes the tip names for
-  # the unlabeled tree and NA values for the ancestral nodes, so we can discard
-  # them
-  unlabeled_tree <- select(unlabeled_tree, -label)
-  
-  # extract the label names and their corresponding nodes from the labeled tree
-  # into a tibble
-  labels <- labeled_tree$label
-  nodes <- labeled_tree$node
-  
-  labels_for_tree <- tibble(label = labels,
-              node = nodes)
-  
-  # combine the unlabeled tree with the labels by the node values and return the
-  # new phylogram with labels
-  tree_with_labels <- full_join(unlabeled_tree,
-                                labels_for_tree, 
-                                by = "node")
-  return(tree_with_labels)
-  
-}
-
-# Once the topologies with branch lengths are correctly labeled, information 
-# the differences in reconstructions should be added to the tibbles so that
-# inferences about can be made. add_data_to_tree accomplishes that function by
-# fusing the data from the analysis of disagreements per node to the correct
-# nodes in the tibble
-add_data_to_tree <- function(node_identity_binned, compared_model, alignment_size, tree_table, num_tips){
-
-  # extract data from single comparison between models and calculate identity
-  # between reconstructions at a single node
-  model_disagreement_data <- node_identity_binned %>%
-  filter(model == compared_model) %>%
-  mutate(identity = (1-number_disagreements/alignment_size)*100)
-  
-  # transform node columns from factors to numeric values, but preserving the
-  # order
-  model_disagreement_data$node <- as.numeric(levels(model_disagreement_data$node)[model_disagreement_data$node])
-  
-  # prepare data to merge with tree tibble format
-  model_disagreement_data <- model_disagreement_data %>%
-    select("node", "number_disagreements","identity") %>%
-    arrange(node)
-  
-  # since we only have data for the ancestral nodes, we need to produce some
-  # placeholder values (NA) for the tip branches and merge them with the
-  # disagreement data
-  tip_labels <- tree_table$label[1:num_tips+1]
-  tip_data <- tibble(label = tip_labels,
-         number_disagreements = NA,
-         identity = NA)
-  colnames(model_disagreement_data) <- c("label", "number_disagreements", "identity")
-  model_disagreement_data$label <- as.character(model_disagreement_data$label)
-  
-  # generate tibble with all necessary data to add to the input tree tibble
-  model_disagreement_data <- tibble(model_disagreement_data)
-  model_disagreement_data <- bind_rows(model_disagreement_data, tip_data)
-  
-  # merge with tree tibble
-  tree_table <- full_join(tree_table, model_disagreement_data, by = "label")
-  return(tree_table)
-}
-
-# Every ancestral node is connected to its parent node and two daughter nodes
-# by a certain branch length. To calculate how well connected a node is, we
-# have to incorporate the info on the three branches leading to that node. The
-# arithmetic mean may be a misleading number as branches can have very variable
-# lengths. As such, a better measurement is the harmonic mean, that penalizes
-# the effect of outliers. calc_harmonic_blens() is a function that pairs all 
-# ancestral nodes with their connecting branch length values to their parent and 
-# daughter nodes. Then, the function calculates the arithmetic mean and the 
-# harmonic mean per node. The function adds this data to a partial tibble of
-# the tree values that only contains the ancestral nodes for later plotting
-calc_harmonic_blens <- function(tree_with_data, num_tips){
-  
-  tree_with_data <- as.data.frame(tree_with_data)
-  blens_df <- data.frame()
-  
-  # iterate only in ancestral nodes looking for branch length values
-  # given how trees are read, a fake root is incorporated into the tibble by
-  # adding an unexistant node that splits the branch length in two equal pieces
-  # the function corrects for that fake splitting exclusively for the extra
-  # node
-  for(i in seq(num_tips+2, nrow(tree_with_data))){
-    node <- tree_with_data$node[i]
-    parent_blens <- tree_with_data$branch.length[i]
-    daughter <- c()
-    
-    for(j in 1:nrow(tree_with_data)){
-      if(tree_with_data$node[i] == tree_with_data$parent[j]){
-        if(tree_with_data$parent[i] == num_tips+1) { 
-          daughter_blens <- tree_with_data$branch.length[j]*2
-          daughter <- c(daughter, daughter_blens)  
-        } else {
-          daughter_blens <- tree_with_data$branch.length[j]
-          daughter <- c(daughter, daughter_blens)
-        }
-      }
-    }
-    blens_data <- c(node, parent_blens, daughter[1], daughter[2])
-    blens_df <- rbind(blens_df, blens_data)
-  }
-  # rename for clarity
-  colnames(blens_df) <- c("node", "parent", "daughter_1", "daughter_2")
-  
-  # calculate arithmentic mean and harmonic mean
-  blens_df <- blens_df %>% 
-    rowwise() %>%
-    mutate(mean = mean(c(parent, daughter_1, daughter_2))) %>%
-    mutate(harmonic_mean = psych::harmonic.mean(c(parent, daughter_1, daughter_2))) %>%
-    select(c(node,mean, harmonic_mean))
-  
-  # merge data with tree tibble and then eliminate tip nodes from the table
-  tree_with_data <- full_join(tree_with_data, blens_df, by = "node")
-  ancestors_with_data <- filter(tree_with_data, node >= num_tips+2)
-  return(ancestors_with_data)
-
-}
-
-
-# Load sr topologies
-sr_tree_labels <- read.newick(paste0(sr.path, "/C_teleta_sr/labeled_cladogram.txt"))
-sr_topologies <- lapply(c(paste0(sr.path, "/C_teleta_sr/phylogram.txt"),
-                          paste0(sr.path, "/Protostome_sr/phylogram.txt"),
-                          paste0(sr.path, "/HsMR/phylogram.txt"),
-                          paste0(sr.path, "/JTT/phylogram.txt"),
-                          paste0(sr.path, "/Poisson/phylogram.txt")), 
-                          read.newick)
-
-# Load ha topologies
-ha_tree_labels <- read.newick(paste0(ha.path, "/H1/labeled_cladogram.txt"))
-ha_topologies <- lapply(c(paste0(ha.path, "/H1/phylogram.txt"),
-                          paste0(ha.path, "/H3/phylogram.txt"),
-                          paste0(ha.path, "/FLU/phylogram.txt"),
-                          paste0(ha.path, "/Poisson/phylogram.txt")),
-                          read.newick)
-
-# Load rbd topologies
-rbd_tree_labels <- read.newick(paste0(rbd.path, "/SARS_CoV_2/labeled_cladogram.txt"))
-rbd_topologies <- lapply(c(paste0(rbd.path, "/SARS_CoV_2/phylogram.txt"),
-                           paste0(rbd.path, "/WAG/phylogram.txt"),
-                           paste0(rbd.path, "/Poisson/phylogram.txt")),
-                           read.newick)
-
-
-sr_topology_tables <- lapply(sr_topologies, label_ancestral_nodes, sr_tree_labels)
-names(sr_topology_tables) <- sr.model.list[1:length(sr_topology_tables)]
-
-ha_topology_tables <- lapply(ha_topologies, label_ancestral_nodes, ha_tree_labels)
-names(ha_topology_tables) <- ha.model.list[1:length(ha_topology_tables)]
-
-rbd_topology_tables <- lapply(rbd_topologies, label_ancestral_nodes, rbd_tree_labels)
-names(rbd_topology_tables) <- rbd.model.list[1:length(rbd_topology_tables)]
-
-
-sr_topology_tables_with_data <- lapply(2:4, function(i) {
-  tree_with_data <- add_data_to_tree(sr_node_identity_binned, sr.model.list[i], sr.alignment.size, sr_topology_tables[[i]], sr.tips)
-  return(tree_with_data)
-})
-names(sr_topology_tables_with_data) <- sr.model.list[2:4]
-
-ha_topology_tables_with_data <- lapply(2:4, function(i) {
-  tree_with_data <- add_data_to_tree(ha_node_identity_binned, ha.model.list[i], ha.alignment.size, ha_topology_tables[[i]], ha.tips)
-  return(tree_with_data)
-})
-names(ha_topology_tables_with_data) <- ha.model.list[2:4]
-
-rbd_topology_tables_with_data <- lapply(2:3, function(i) {
-  tree_with_data <- add_data_to_tree(rbd_node_identity_binned, rbd.model.list[i], rbd.alignment.size, rbd_topology_tables[[i]], rbd.tips)
-  return(tree_with_data)
-})
-names(rbd_topology_tables_with_data) <- rbd.model.list[2:3]
-
-
-
-############################################################
-##### Calculate harmonic branch lengths ####################
-############################################################
-
-
-
-sr_harmonic_blens <- data.frame()
-
-for(i in 1:length(sr_topology_tables_with_data)){
-  harmonic_df <- calc_harmonic_blens(sr_topology_tables_with_data[[i]], sr.tips)
-  harmonic_df <- mutate(harmonic_df, model = names(sr_topology_tables_with_data)[i])
-  sr_harmonic_blens <- rbind(sr_harmonic_blens, harmonic_df)
-}
-
-
-ha_harmonic_blens <- data.frame()
-
-for(i in 1:length(ha_topology_tables_with_data)){
-  harmonic_df <- calc_harmonic_blens(ha_topology_tables_with_data[[i]], ha.tips)
-  harmonic_df <- mutate(harmonic_df, model = names(ha_topology_tables_with_data)[i])
-  ha_harmonic_blens <- rbind(ha_harmonic_blens, harmonic_df)
-}
-
-rbd_harmonic_blens <- data.frame()
-
-for(i in 1:length(rbd_topology_tables_with_data)){
-  harmonic_df <- calc_harmonic_blens(rbd_topology_tables_with_data[[i]], rbd.tips)
-  harmonic_df <- mutate(harmonic_df, model = names(rbd_topology_tables_with_data)[i])
-  rbd_harmonic_blens <- rbind(rbd_harmonic_blens, harmonic_df)
-}
-
-
-```
 
 
 ```{r plot harmonic mean}
@@ -1637,227 +1876,6 @@ ggsave(file = paste0(figure.path, "/ha_main_harmonic.svg"))
 
 
 
-```{r}
-
-plot.entropy.boxplot <- function(table){
-  table$mismatch <- factor(table$mismatch, levels = c("identical", "disagreement"))
-  plot <- ggplot(table, aes(x = system, y = entropy, fill = mismatch)) +
-    geom_hline(yintercept = c(0, 0.5, 1), linetype = "dashed", color = "grey50") +
-    geom_boxplot(alpha = 0.8, width = 0.5) +
-    scale_fill_manual(values = c("#FFDFB9", "#A4193D")) +
-    scale_y_continuous(breaks = seq(0, 1, 0.25), limits = c(0,1)) +
-    theme(aspect.ratio = 1) +
-    labs(x = "Type of reconstruction",
-         y = "Sequence entropy",
-         fill = "Reconstruction \nbetween models")
-    
-  
-  return(plot)
-}
-
-plot.rates.boxplot <- function(table){
-  table$mismatch <- factor(table$mismatch, levels = c("identical", "disagreement"))
-  plot <- ggplot(table, aes(x = system, y = rates, fill = mismatch)) +
-    geom_hline(yintercept = 1, linetype = "dashed", color = "grey50") +
-    geom_boxplot(alpha = 0.8, width = 0.5) +
-    scale_fill_manual(values = c("#FFDFB9", "#A4193D")) +
-    scale_y_continuous(breaks = seq(0, 6, 1), limits = c(0,6.5)) +
-    theme(aspect.ratio = 1)+
-    labs(x = "Type of reconstruction",
-         y = "Rate of evolution",
-         fill = "Reconstruction \nbetween models")
-  
-  
-  
-  return(plot)
-}
-
-get_ks_test <- function(data){
-  table <- data
-  
-  parameters <- c("rate of evolution", "sequence entropy")
-  statistic <- c()
-  p.value <- c()
-  
-  set.seed(817685)
-  table <- table[sample(nrow(table), 1000)]
-  
-  group1 <- table$rates[table$mismatch == "identical"]
-  group2 <- table$rates[table$mismatch == "disagreement"]
-  results <- wilcox.test(group2, group1, paired = FALSE, alternative = "g", conf.int = TRUE)
-  print(results)
-  statistic <- c(statistic, as.numeric(results$statistic))
-  p.value <- c(p.value, results$p.value)
-  
-  group1 <- table$entropy[table$mismatch == "identical"]
-  group2 <- table$entropy[table$mismatch == "disagreement"]
-  #results <- ks.test(group2, group1)
-  results <- wilcox.test(group2, group1, paired = FALSE, alternative = "g", conf.int = TRUE)
-  print(results)
-  statistic <- c(statistic, as.numeric(results$statistic))
-  p.value <- c(p.value, results$p.value)
-  
-  df <- data.frame(parameters, statistic, p.value)
-  
-  print(paste("Asymptotic two-sample Kolmogorov-Smirnov test of", colnames(table[,3]), "and", colnames(table[,4])))
-  return(df)
-  
-}
-
-
-sr_nodes_with_dis <- unique(filter(sr_node_identity_binned, number_disagreements > 0)$node)
-count(filter(sr.model.comparison.list[[2]], node %in% sr_nodes_with_dis), mismatch == "identical")
-
-rbd_nodes_with_dis <- unique(filter(rbd_node_identity_binned, number_disagreements > 0)$node)
-count(filter(rbd.model.comparison.list[[1]], node %in% rbd_nodes_with_dis), mismatch == "identical")
-
-
-ha_nodes_with_dis <- unique(filter(ha_node_identity_binned, number_disagreements > 0)$node)
-count(filter(ha.model.comparison.list[[2]], node %in% ha_nodes_with_dis), mismatch == "identical")
-
-
-filter.node.data <- function(table, list_disagreements){
-  filtered_table <- table %>%
-  filter(node %in% list_disagreements) %>%
-  select(c(mismatch, rates, entropy))
-  
-  return(filtered_table)
-}
-
-############################################################
-##### Disagreements with best SH model #####################
-############################################################
-
-sr_main_node_data <- filter.node.data(sr.model.comparison.list[[2]], sr_nodes_with_dis) %>% mutate(system = "sr DBD")
-rbd_main_node_data <- filter.node.data(rbd.model.comparison.list[[1]], rbd_nodes_with_dis) %>% mutate(system = "SARS rbd")
-ha_main_node_data <- filter.node.data(ha.model.comparison.list[[2]], ha_nodes_with_dis) %>% mutate(system = "ha")
-
-
-All_main_node_data <- rbind(sr_main_node_data, rbd_main_node_data, ha_main_node_data)
-All_main_node_data$system <- factor(All_main_node_data$system, levels = c("sr DBD", "SARS rbd", "ha"))
-
-get_ks_test(sr.model.comparison.list[[2]])
-get_ks_test(rbd.model.comparison.list[[1]])
-get_ks_test(ha.model.comparison.list[[2]])
-
-
-All_main_node_data %>%
-  group_by(system, mismatch) %>%
-  summarise(median_rates = median(rates),
-            median_entropy = median(entropy))
-
-plot.rates.boxplot(All_main_node_data) +
-    geom_signif(
-      annotation = "***",
-      y_position = c(5.5, 6.3, 4.5), 
-      xmin = c(0.875, 1.875, 2.875), 
-      xmax = c(1.125, 2.125, 3.125),
-      tip_length = c(0.015,0.015)
-  )
-
-ggsave(file = paste0(figure.path, "/Main_rates_plot.svg"))
-
-plot.entropy.boxplot(All_main_node_data) + 
-    geom_signif(
-      annotation = "***",
-      y_position = c(0.70, 0.70, 0.9), 
-      xmin = c(0.875, 1.875, 2.875), 
-      xmax = c(1.125, 2.125, 3.125),
-      tip_length = c(0.015,0.015)
-  )
-
-
-ggsave(file = paste0(figure.path, "/Main_entropy_plot.svg"))
-
-All_main_node_data %>%
-  group_by(system, mismatch) %>%
-  summarise(median_rate = median(rates),
-            median_entropy = median(entropy))
-
-
-############################################################
-##### Disagreements among site-specific models #############
-############################################################
-
-
-sr_epistasis_node_data <- filter.node.data(sr.model.comparison.list[[1]], sr_nodes_with_dis) %>% mutate(system = "sr DBD")
-ha_epistasis_node_data <- filter.node.data(ha.model.comparison.list[[1]], ha_nodes_with_dis) %>% mutate(system = "ha")
-
-
-All_epistasis_node_data <- rbind(sr_epistasis_node_data, ha_epistasis_node_data)
-All_epistasis_node_data$system <- factor(All_epistasis_node_data$system, levels = c("sr DBD", "ha"))
-
-get_ks_test(sr.model.comparison.list[[1]])
-get_ks_test(ha.model.comparison.list[[1]])
-
-
-plot.rates.boxplot(All_epistasis_node_data) +
-    geom_signif(
-      annotation = "***",
-      y_position = c(5.5, 4.5), 
-      xmin = c(0.875, 1.875), 
-      xmax = c(1.125, 2.125),
-      tip_length = c(0.015,0.015)
-  )
-
-ggsave(file = paste0(epistasis.figure.path, "/rates.plot.svg"))
-
-plot.entropy.boxplot(All_epistasis_node_data)  + 
-    geom_signif(
-      annotation = "***",
-      y_position = c(0.7, 0.9), 
-      xmin = c(0.875, 1.875), 
-      xmax = c(1.125, 2.125),
-      tip_length = c(0.015,0.015)
-  )
-
-ggsave(file = paste0(epistasis.figure.path, "/entropy.plot.svg"))
-
-
-All_epistasis_node_data %>%
-  group_by(system, mismatch) %>%
-  summarise(median_rate = median(rates),
-            median_entropy = median(entropy))
-
-
-```
-
-
-
-```{r kolmogorov smirnoff}
-
-get_ks_test <- function(data){
-  table <- data
-  
-  parameters <- c("rate of evolution", "sequence entropy")
-  
-  
-  group1 <- table$rates[table$mismatch == "identical"]
-  group2 <- table$rates[table$mismatch == "disagreement"]
-  results <- ks.test(group2, group1)
-  print(paste("Kolmogorov-Smirnov test of", parameters[1]))
-  print(paste0("D(", length(group1),",", length(group2), ") = ", signif(results$statistic, digits = 4), ", p = ", signif(results$p.value, digits = 3)))
-  
-  group1 <- table$entropy[table$mismatch == "identical"]
-  group2 <- table$entropy[table$mismatch == "disagreement"]
-  results <- ks.test(group2, group1)
-  print(paste("Kolmogorov-Smirnov test of", parameters[2]))
-  print(paste0("D(", length(group1),",", length(group2), ") = ", signif(results$statistic, digits = 4), ", p = ", signif(results$p.value, digits = 3)))
-  
-}
-
-
-
-get_ks_test(sr.model.comparison.list[[2]])
-get_ks_test(rbd.model.comparison.list[[1]])
-get_ks_test(ha.model.comparison.list[[2]])
-
-
-get_ks_test(sr.model.comparison.list[[1]])
-get_ks_test(ha.model.comparison.list[[1]])
-
-
-```
 
 
 
@@ -2113,53 +2131,4 @@ calculate.correlation(ha_harmonic_blens, "H1")
 ggsave(file = paste0(epistasis.figure.path, "/ha.harmonic.blens.svg"))
 
 ```
-
-
-## Supplementary material
-
-
-
-```{r Likelihood data processing, echo=FALSE}
-
-extract_logLik <- function(model_list, model_path, param_vector) {
-  # Read the log-likelihood values for each model
-  logLik_local <- sapply(model_list, function(model) {
-    inferred_parameters <- readLines(file.path(model_path, model, "inferred_parameters.txt"))
-    # Extract the log-likelihood value from the last line of the file
-    as.numeric(strsplit(inferred_parameters[length(inferred_parameters)], split = " ")[[1]][3])
-  })
-  
-  # Compute AIC and delta AIC
-  aic <- -2 * logLik_local + 2 * param_vector
-  delta_aic <- aic - min(aic)
-  
-  # Create a data frame with the log-likelihood values, delta AIC, and the number of parameters used in the model
-  logLik_table <- data.frame(model = model_list, logLik = logLik_local, delta_aic, parameters = param_vector)
-  logLik_table$model <- factor(logLik_table$model, levels = model_list)
-  
-  # Compute the differences in log-likelihood values and create a table
-  delta_logLik <- diff(logLik_local)
-  delta_model <- model_list[-1]
-  delta_logLik_table <- data.frame(delta_model, delta_logLik)
-  
-  # Return a list of the two tables
-  Likelihood_tables <- list(logLik_table, delta_logLik_table)
-  return(Likelihood_tables)
-}
-
-sr_num_param <- c(rep(12, 11), 20, 1)
-ha_num_param <- c(12, 12, 20, 1)
-rbd_num_param <- c(12, 20, 1)
-
-sr_logLik <- extract_logLik(sr.model.list, sr.path, sr_num_param)
-ha_logLik <- extract_logLik(model.list, ha.path, ha_num_param)
-rbd_logLik <- extract_logLik(rbd.model.list, rbd.path, rbd_num_param)
-
-
-knitr::kable(arrange(sr_logLik[[1]], delta_aic), caption = "Steroid receptor")
-knitr::kable(arrange(ha_logLik[[1]], delta_aic), caption = "Hemagglutinin")
-knitr::kable(arrange(rbd_logLik[[1]], delta_aic), caption = "SARS-CoV rbd")
-
-```
-
 
