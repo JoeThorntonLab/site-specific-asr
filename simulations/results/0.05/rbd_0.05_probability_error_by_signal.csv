@@ -1,0 +1,7 @@
+"category","proportion","reconstruction","system","blens"
+"True",0.00012362675957405,"SH","RBD",0.05
+"Misleading",0.989151873767258,"SH","RBD",0.05
+"Absent",0.430550973276146,"SH","RBD",0.05
+"True",0.00042145486218426,"SS","RBD",0.05
+"Misleading",0.919132149901381,"SS","RBD",0.05
+"Absent",0.357637743319037,"SS","RBD",0.05

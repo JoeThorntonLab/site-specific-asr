@@ -1,0 +1,5 @@
+"category","proportion","system","blens"
+"Same error",0.00884615384615385,"RBD",0.05
+"Different error",0.0011043956043956,"RBD",0.05
+"Only SH correct",0.00153846153846154,"RBD",0.05
+"Only SS correct",0.00285164835164835,"RBD",0.05
