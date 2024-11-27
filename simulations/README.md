@@ -20,7 +20,7 @@ using the following syntax:
 
 `Rscript /examples/script_name*.R 0.8 "c(1:10)" RBD`
 
-DISCLAIMER: The performance and memory usage of the scripts to summarize the data
+**DISCLAIMER:** The performance and memory usage of the scripts to summarize the data
 was optimized using ChatGPT-4o. In particular, the implementation of the data.table 
 package was suggested by the artificial intelligence and it help in reducing 
 computing time of the large amounts of data
