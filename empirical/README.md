@@ -9,7 +9,7 @@ reconstructions.
 
 - \*_alignment.phy Contains the amino acid alignment for the protein system
 - \*_tree.txt Contains the phylogeny used in this work for the protein system
-- \*_dms_\*.csv Contains the experimental data on the protein function upon amino acid mutation
+- \*_dms_.csv Contains the experimental data on the protein function upon amino acid mutation
 - *_rates. Contains the exchangeabilities of the site-homogeneous model
 - *_freqs. Contains the maximum likelihood estimates of the empirical frequencies of the alignment data of the protein. The estimates were obtained using RAxML 8.2
 
@@ -36,6 +36,7 @@ Each subdirectory contains the following info:
 - Subdirectory **ASR/** which contains files with the ML reconstructions and a table with posterior probabilities (_PP.txt) of recontruction of all states at all sites
 
 Sources of data:
+
 Sequence alignment, tree, and DMS data for the steroid receptor DNA-binding 
 domain (SR) was obtained from Park Y, Metzger BPH, Thornton JW. 2022. Epistatic 
 drift causes gradual decay of predictability in protein evolution. Science 
