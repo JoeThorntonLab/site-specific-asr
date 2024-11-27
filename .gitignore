@@ -11,3 +11,8 @@ codeml.ctl
 rates
 sim_alignment_paml.phy
 best_ml_tree.txt
+0.1/
+0.2/
+0.4/
+0.8/
+1.6/
