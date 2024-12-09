@@ -13,3 +13,4 @@ rates
 sim_alignment_paml.phy
 best_ml_tree.txt
 Empirical_data_analysis.Rmd
+Simulated_data_analysis.Rmd
