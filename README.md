@@ -2,7 +2,7 @@
 
 This repository contains the scripts, data, and results found in the paper:
 
-Muñiz-Trejo, R, Y. Park & J. W. Thornton (2024). Robustness of ancestral sequence reconstruction to among-site evolutionary heterogeneity and epistasis
+Muñiz-Trejo, R, Y. Park & J. W. Thornton (2024). Robustness of ancestral sequence reconstruction to among-site and among-lineage evolutionary heterogeneity
 
 This main directory contains a copy of the **DMSPhyloAA.py** script which was used
 to inform the site-specific models and obtain the ancestral reconstructions. The
